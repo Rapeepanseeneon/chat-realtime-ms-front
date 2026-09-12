@@ -5,7 +5,7 @@ import { useState } from "react";
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
 
-export function LogoutButton() {
+export function LogoutButton({ className = "" }: { className?: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
@@ -24,7 +24,11 @@ export function LogoutButton() {
   };
 
   return (
-    <button className="button button-ghost" onClick={logout} disabled={pending}>
+    <button
+      className={`button button-ghost ${className}`.trim()}
+      onClick={logout}
+      disabled={pending}
+    >
       {pending ? "Logging out…" : "Logout"}
     </button>
   );

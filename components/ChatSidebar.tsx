@@ -1,0 +1,205 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import type { ChatUser } from "../lib/chat-types";
+import { LogoutButton } from "./LogoutButton";
+
+type ChatSidebarProps = {
+  username: string;
+  email: string;
+  users: ChatUser[];
+  selectedUserId: string | null;
+  usersLoading: boolean;
+  onSelectUser: (user: ChatUser) => void;
+};
+
+function ChatIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 18.5 3.5 21v-5.3A8.5 8.5 0 1 1 7 18.5Z" />
+    </svg>
+  );
+}
+
+function ProfileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.8 20c.8-4 3.2-6 7.2-6s6.4 2 7.2 6" />
+    </svg>
+  );
+}
+
+export function ChatSidebar({
+  username,
+  email,
+  users,
+  selectedUserId,
+  usersLoading,
+  onSelectUser,
+}: ChatSidebarProps) {
+  const pathname = usePathname();
+  const [isOpen, setIsOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const initial = username.trim().charAt(0).toLocaleUpperCase() || "P";
+
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    closeButtonRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const closeDrawer = (restoreFocus = false) => {
+    setIsOpen(false);
+    if (restoreFocus) {
+      requestAnimationFrame(() => menuButtonRef.current?.focus());
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={menuButtonRef}
+        className="sidebar-menu-button"
+        type="button"
+        aria-label="Open navigation menu"
+        aria-controls="chat-sidebar"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen(true)}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+
+      {isOpen ? (
+        <button
+          className="sidebar-overlay"
+          type="button"
+          aria-label="Close navigation menu"
+          onClick={() => closeDrawer(true)}
+        />
+      ) : null}
+
+      <aside
+        id="chat-sidebar"
+        className={`chat-sidebar${isOpen ? " chat-sidebar-open" : ""}`}
+        aria-label="Chat navigation"
+      >
+        <div className="sidebar-brand-row">
+          <Link
+            className="sidebar-brand"
+            href="/"
+            onClick={() => closeDrawer()}
+          >
+            <span className="sidebar-brand-mark">Pb</span>
+            <span>Pb Messenger</span>
+          </Link>
+          <button
+            ref={closeButtonRef}
+            className="sidebar-close-button"
+            type="button"
+            aria-label="Close navigation menu"
+            onClick={() => closeDrawer(true)}
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="sidebar-user">
+          <div className="sidebar-avatar" aria-hidden="true">
+            {initial}
+          </div>
+          <div className="sidebar-user-copy">
+            <strong>{username}</strong>
+            <span title={email}>{email}</span>
+          </div>
+        </div>
+
+        <nav className="sidebar-nav" aria-label="Main navigation">
+          <Link
+            className={`sidebar-nav-link${pathname === "/chat" ? " sidebar-nav-link-active" : ""}`}
+            href="/chat"
+            aria-current={pathname === "/chat" ? "page" : undefined}
+            onClick={() => closeDrawer()}
+          >
+            <ChatIcon />
+            <span>Chat</span>
+          </Link>
+          <Link
+            className={`sidebar-nav-link${pathname === "/profile/edit" ? " sidebar-nav-link-active" : ""}`}
+            href="/profile/edit"
+            aria-current={pathname === "/profile/edit" ? "page" : undefined}
+            onClick={() => closeDrawer()}
+          >
+            <ProfileIcon />
+            <span>Edit Profile</span>
+          </Link>
+        </nav>
+
+        <section className="sidebar-contacts" aria-labelledby="contacts-title">
+          <div className="sidebar-section-heading">
+            <h2 id="contacts-title">Messages</h2>
+            <span>{users.length}</span>
+          </div>
+          <div className="sidebar-contact-list">
+            {usersLoading ? (
+              <p className="sidebar-list-message">Loading users…</p>
+            ) : users.length === 0 ? (
+              <p className="sidebar-list-message">No other users yet.</p>
+            ) : (
+              users.map((user) => {
+                const isActive = selectedUserId === user.id;
+                const userInitial =
+                  user.username.trim().charAt(0).toLocaleUpperCase() || "P";
+                return (
+                  <button
+                    className={`sidebar-contact${isActive ? " sidebar-contact-active" : ""}`}
+                    type="button"
+                    key={user.id}
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      onSelectUser(user);
+                      closeDrawer();
+                    }}
+                  >
+                    <span className="sidebar-contact-avatar" aria-hidden="true">
+                      {userInitial}
+                    </span>
+                    <span>{user.username}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </section>
+
+        <div className="sidebar-footer">
+          <LogoutButton className="sidebar-logout-button" />
+        </div>
+      </aside>
+    </>
+  );
+}

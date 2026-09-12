@@ -1,16 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 type ProfileFormProps = { username: string; email: string };
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const SUCCESS_REDIRECT_DELAY_MS = 700;
 
 export function ProfileForm({ username, email }: ProfileFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    };
+  }, []);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -19,6 +27,7 @@ export function ProfileForm({ username, email }: ProfileFormProps) {
     if (!apiBaseUrl) return setError("The API URL is not configured.");
     const form = new FormData(event.currentTarget);
     setPending(true);
+    let updateSucceeded = false;
     try {
       const response = await fetch(`${apiBaseUrl}/api/profile`, {
         method: "PUT",
@@ -36,12 +45,15 @@ export function ProfileForm({ username, email }: ProfileFormProps) {
         );
         return;
       }
+      updateSucceeded = true;
       setSuccess("Profile updated successfully.");
-      router.refresh();
+      redirectTimerRef.current = setTimeout(() => {
+        router.replace("/chat");
+      }, SUCCESS_REDIRECT_DELAY_MS);
     } catch {
       setError("Could not reach the server. Please try again.");
     } finally {
-      setPending(false);
+      if (!updateSucceeded) setPending(false);
     }
   };
 
@@ -89,6 +101,7 @@ export function ProfileForm({ username, email }: ProfileFormProps) {
         <button
           className="button button-ghost"
           type="button"
+          disabled={pending}
           onClick={() => router.push("/")}
         >
           Cancel
