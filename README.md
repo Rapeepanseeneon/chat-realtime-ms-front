@@ -12,8 +12,8 @@ bun run dev
 ```
 
 Open `http://localhost:3000`. The local environment example connects to the
-backend WebSocket at `ws://localhost:3001/ws` and loads persisted message
-history from `http://localhost:3001/api/messages`.
+backend at `http://localhost:3001`. Register or log in before opening `/chat`;
+the backend authenticates both message history and the WebSocket connection.
 
 ## Checks
 

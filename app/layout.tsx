@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Realtime Chat",
-  description: "A small realtime chat built with Next.js, Bun, and Hono.",
+  title: "Pb Messenger",
+  description: "Connect and chat in real time with Pb Messenger.",
 };
 
 export default function RootLayout({
