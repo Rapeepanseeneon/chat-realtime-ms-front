@@ -1,2 +1,23 @@
 # chat-realtime-ms-front
-its mesenge realtime
+
+Realtime chat frontend built with Next.js App Router and TypeScript.
+
+## Run locally
+
+Copy `.env.example` to `.env.local`, then run:
+
+```bash
+bun install
+bun run dev
+```
+
+Open `http://localhost:3000`. The local environment example connects to the
+backend WebSocket at `ws://localhost:3001/ws`.
+
+## Checks
+
+```bash
+bun run format:check
+bun run typecheck
+bun run build
+```
