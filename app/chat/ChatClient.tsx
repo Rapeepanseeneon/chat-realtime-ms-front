@@ -105,8 +105,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const selectedUserIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const selectedUser =
-    users.find((user) => user.id === selectedUserId) ?? null;
+  const selectedUser = users.find((user) => user.id === selectedUserId) ?? null;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -125,7 +124,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           router.replace("/login");
           return;
         }
-        if (!response.ok) throw new Error(`Users request failed: ${response.status}`);
+        if (!response.ok)
+          throw new Error(`Users request failed: ${response.status}`);
         const value: unknown = await response.json();
         if (!isRecord(value) || !Array.isArray(value.users)) {
           throw new Error("Invalid users response");
@@ -136,7 +136,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         }
         setUsers(parsedUsers as ChatUser[]);
       } catch (requestError) {
-        if (requestError instanceof Error && requestError.name === "AbortError") return;
+        if (requestError instanceof Error && requestError.name === "AbortError")
+          return;
         setUsersError("Users could not be loaded.");
       } finally {
         if (!controller.signal.aborted) setUsersLoading(false);
@@ -233,7 +234,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           mergeMessages(current, history as PrivateMessage[]),
         );
       } catch (requestError) {
-        if (requestError instanceof Error && requestError.name === "AbortError") return;
+        if (requestError instanceof Error && requestError.name === "AbortError")
+          return;
         setHistoryError("Message history could not be loaded.");
       } finally {
         if (!controller.signal.aborted) setHistoryLoading(false);
@@ -326,7 +328,9 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               ) : messages.length === 0 ? (
                 <div className="empty-state">
                   <p>No messages yet</p>
-                  <span>Start a private conversation with {selectedUser.username}.</span>
+                  <span>
+                    Start a private conversation with {selectedUser.username}.
+                  </span>
                 </div>
               ) : (
                 messages.map((message) => {
@@ -373,7 +377,9 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   value={text}
                   onChange={(event) => setText(event.target.value)}
                   placeholder={
-                    selectedUser ? "Type a private message…" : "Select a user first"
+                    selectedUser
+                      ? "Type a private message…"
+                      : "Select a user first"
                   }
                   maxLength={1_000}
                   disabled={!selectedUser}
