@@ -1,8 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ChatSidebar } from "../../components/ChatSidebar";
+import { FriendManager } from "../../components/FriendManager";
 import type { ChatUser, PrivateMessage } from "../../lib/chat-types";
 
 type ConnectionStatus = "Connecting" | "Connected" | "Disconnected";
@@ -91,63 +98,71 @@ const mergeMessages = (
 
 export function ChatClient({ currentUser }: ChatClientProps) {
   const router = useRouter();
-  const [users, setUsers] = useState<ChatUser[]>([]);
+  const [friends, setFriends] = useState<ChatUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [text, setText] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("Connecting");
-  const [usersLoading, setUsersLoading] = useState(true);
+  const [friendsLoading, setFriendsLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [usersError, setUsersError] = useState<string | null>(null);
+  const [friendsError, setFriendsError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isFriendManagerOpen, setIsFriendManagerOpen] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const selectedUserIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const selectedUser = users.find((user) => user.id === selectedUserId) ?? null;
+  const selectedUser =
+    friends.find((friend) => friend.id === selectedUserId) ?? null;
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const loadUsers = async () => {
+  const loadFriends = useCallback(
+    async (signal?: AbortSignal) => {
       if (!apiBaseUrl) {
-        setUsersError("NEXT_PUBLIC_API_URL is not configured.");
-        setUsersLoading(false);
+        setFriendsError("NEXT_PUBLIC_API_URL is not configured.");
+        setFriendsLoading(false);
         return;
       }
+      setFriendsLoading(true);
+      setFriendsError(null);
       try {
-        const response = await fetch(`${apiBaseUrl}/api/users`, {
+        const response = await fetch(`${apiBaseUrl}/api/friends`, {
           credentials: "include",
-          signal: controller.signal,
+          signal,
         });
         if (response.status === 401) {
           router.replace("/login");
           return;
         }
         if (!response.ok)
-          throw new Error(`Users request failed: ${response.status}`);
+          throw new Error(`Friends request failed: ${response.status}`);
         const value: unknown = await response.json();
-        if (!isRecord(value) || !Array.isArray(value.users)) {
-          throw new Error("Invalid users response");
+        if (!isRecord(value) || !Array.isArray(value.friends)) {
+          throw new Error("Invalid friends response");
         }
-        const parsedUsers = value.users.map(parseChatUser);
-        if (parsedUsers.some((user) => user === null)) {
-          throw new Error("Invalid user in response");
+        const parsedFriends = value.friends.map(parseChatUser);
+        if (parsedFriends.some((friend) => friend === null)) {
+          throw new Error("Invalid friend in response");
         }
-        setUsers(parsedUsers as ChatUser[]);
+        setFriends(parsedFriends as ChatUser[]);
       } catch (requestError) {
         if (requestError instanceof Error && requestError.name === "AbortError")
           return;
-        setUsersError("Users could not be loaded.");
+        setFriendsError("Friends could not be loaded.");
       } finally {
-        if (!controller.signal.aborted) setUsersLoading(false);
+        if (!signal?.aborted) setFriendsLoading(false);
       }
-    };
-    void loadUsers();
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadFriends(controller.signal);
     return () => {
       controller.abort();
     };
-  }, [router]);
+  }, [loadFriends]);
 
   useEffect(() => {
     if (!websocketUrl) {
@@ -283,7 +298,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setConnectionError(null);
   };
 
-  const displayedError = usersError ?? historyError ?? connectionError;
+  const closeFriendManager = useCallback(() => {
+    setIsFriendManagerOpen(false);
+  }, []);
+
+  const displayedError = friendsError ?? historyError ?? connectionError;
 
   return (
     <main className="chat-shell">
@@ -291,10 +310,16 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         <ChatSidebar
           username={currentUser.username}
           email={currentUser.email}
-          users={users}
+          friends={friends}
           selectedUserId={selectedUserId}
-          usersLoading={usersLoading}
+          friendsLoading={friendsLoading}
           onSelectUser={selectUser}
+          onManageFriends={() => setIsFriendManagerOpen(true)}
+        />
+        <FriendManager
+          isOpen={isFriendManagerOpen}
+          onClose={closeFriendManager}
+          onFriendsChanged={() => void loadFriends()}
         />
         <div className="chat-main">
           <section className="chat-card" aria-labelledby="chat-title">
@@ -318,8 +343,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             >
               {!selectedUser ? (
                 <div className="empty-state">
-                  <p>Select a user to start chatting</p>
-                  <span>Choose someone from the sidebar.</span>
+                  <p>Select a friend to start chatting</p>
+                  <span>Choose an accepted friend from the sidebar.</span>
                 </div>
               ) : historyLoading && messages.length === 0 ? (
                 <div className="empty-state">
@@ -370,7 +395,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                 <span>
                   {selectedUser
                     ? `Message ${selectedUser.username}`
-                    : "Select a user to start chatting"}
+                    : "Select a friend to start chatting"}
                 </span>
                 <input
                   type="text"
@@ -379,7 +404,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   placeholder={
                     selectedUser
                       ? "Type a private message…"
-                      : "Select a user first"
+                      : "Select a friend first"
                   }
                   maxLength={1_000}
                   disabled={!selectedUser}

@@ -9,10 +9,11 @@ import { LogoutButton } from "./LogoutButton";
 type ChatSidebarProps = {
   username: string;
   email: string;
-  users: ChatUser[];
+  friends: ChatUser[];
   selectedUserId: string | null;
-  usersLoading: boolean;
+  friendsLoading: boolean;
   onSelectUser: (user: ChatUser) => void;
+  onManageFriends: () => void;
 };
 
 function ChatIcon() {
@@ -35,10 +36,11 @@ function ProfileIcon() {
 export function ChatSidebar({
   username,
   email,
-  users,
+  friends,
   selectedUserId,
-  usersLoading,
+  friendsLoading,
   onSelectUser,
+  onManageFriends,
 }: ChatSidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
@@ -161,16 +163,29 @@ export function ChatSidebar({
 
         <section className="sidebar-contacts" aria-labelledby="contacts-title">
           <div className="sidebar-section-heading">
-            <h2 id="contacts-title">Messages</h2>
-            <span>{users.length}</span>
+            <h2 id="contacts-title">Friends</h2>
+            <span>{friends.length}</span>
           </div>
+          <button
+            className="sidebar-add-friend"
+            type="button"
+            onClick={() => {
+              onManageFriends();
+              closeDrawer();
+            }}
+          >
+            <span aria-hidden="true">+</span>
+            Find friends &amp; requests
+          </button>
           <div className="sidebar-contact-list">
-            {usersLoading ? (
-              <p className="sidebar-list-message">Loading users…</p>
-            ) : users.length === 0 ? (
-              <p className="sidebar-list-message">No other users yet.</p>
+            {friendsLoading ? (
+              <p className="sidebar-list-message">Loading friends…</p>
+            ) : friends.length === 0 ? (
+              <p className="sidebar-list-message">
+                No friends yet. Search and send a request to get started.
+              </p>
             ) : (
-              users.map((user) => {
+              friends.map((user) => {
                 const isActive = selectedUserId === user.id;
                 const userInitial =
                   user.username.trim().charAt(0).toLocaleUpperCase() || "P";

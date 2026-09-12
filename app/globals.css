@@ -420,6 +420,34 @@ h1 {
   font-weight: 750;
   text-align: center;
 }
+.sidebar-add-friend {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  border: 1px dashed #cbd3ea;
+  border-radius: 12px;
+  background: #f7f8fd;
+  color: #4b5fc8;
+  font-size: 0.82rem;
+  font-weight: 760;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+.sidebar-add-friend span {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.sidebar-add-friend:hover,
+.sidebar-add-friend:focus-visible {
+  border-color: #8797e2;
+  background: #edf0fc;
+  outline: none;
+}
 .sidebar-contact-list {
   min-height: 0;
   display: grid;
@@ -660,6 +688,169 @@ h1 {
   cursor: not-allowed;
 }
 
+.friend-dialog-backdrop {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(22, 29, 44, 0.48);
+  backdrop-filter: blur(5px);
+}
+.friend-dialog {
+  width: min(100%, 620px);
+  max-height: min(760px, calc(100vh - 44px));
+  overflow-y: auto;
+  padding: 26px;
+  border: 1px solid rgba(218, 224, 236, 0.95);
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(22, 29, 44, 0.24);
+}
+.friend-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+.friend-dialog-header h2 {
+  margin: 0;
+  color: #172033;
+  font-size: 1.55rem;
+  letter-spacing: -0.03em;
+}
+.friend-dialog-close {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 12px;
+  background: #f0f2f7;
+  color: #566174;
+  font-size: 1.55rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.friend-search-form {
+  display: grid;
+  gap: 8px;
+}
+.friend-search-form label {
+  color: #576174;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.friend-search-form > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 9px;
+}
+.friend-search-form input {
+  min-width: 0;
+  border: 1px solid #d8dee9;
+  border-radius: 12px;
+  padding: 11px 13px;
+  outline: none;
+  color: #172033;
+}
+.friend-search-form input:focus {
+  border-color: #5268d9;
+  box-shadow: 0 0 0 3px rgba(82, 104, 217, 0.14);
+}
+.friend-search-form button,
+.friend-person-row button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 11px;
+  padding: 0 15px;
+  background: #5268d9;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 760;
+  cursor: pointer;
+}
+.friend-search-form button:disabled,
+.friend-person-row button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.friend-results,
+.friend-requests-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.friend-person-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid #e7eaf1;
+  border-radius: 14px;
+  background: #fafbfc;
+}
+.friend-person-row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #313d54;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend-relationship {
+  color: #778195;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-align: right;
+}
+.friend-requests-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid #e8ebf2;
+}
+.friend-requests-heading h3 {
+  margin: 0;
+  color: #344056;
+  font-size: 1rem;
+}
+.friend-requests-heading button {
+  border: 0;
+  background: transparent;
+  color: #5268d9;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.friend-request-actions {
+  display: flex;
+  gap: 7px;
+}
+.friend-person-row .friend-reject-button {
+  border: 1px solid #dce1eb;
+  background: #fff;
+  color: #626d80;
+}
+.friend-empty {
+  margin: 14px 2px 0;
+  color: #858fa0;
+  font-size: 0.82rem;
+}
+.friend-dialog .form-message {
+  margin-top: 16px;
+}
+.friend-dialog button:focus-visible {
+  outline: 3px solid rgba(82, 104, 217, 0.24);
+  outline-offset: 2px;
+}
+
 @media (max-width: 760px) {
   .chat-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -764,5 +955,32 @@ h1 {
   }
   .message-form button {
     width: 100%;
+  }
+  .friend-dialog-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+  .friend-dialog {
+    width: 100%;
+    max-height: 92vh;
+    padding: 22px 18px;
+    border-radius: 24px 24px 0 0;
+  }
+  .friend-search-form > div {
+    grid-template-columns: 1fr;
+  }
+  .friend-person-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .friend-person-row > button,
+  .friend-relationship,
+  .friend-request-actions {
+    grid-column: 1 / -1;
+  }
+  .friend-relationship {
+    text-align: left;
+  }
+  .friend-request-actions button {
+    flex: 1;
   }
 }
