@@ -12,7 +12,8 @@ bun run dev
 ```
 
 Open `http://localhost:3000`. The local environment example connects to the
-backend WebSocket at `ws://localhost:3001/ws`.
+backend WebSocket at `ws://localhost:3001/ws` and loads persisted message
+history from `http://localhost:3001/api/messages`.
 
 ## Checks
 

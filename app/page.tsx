@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 type ConnectionStatus = "Connecting" | "Connected" | "Disconnected";
 
 type ChatMessage = {
+  id: string;
   name: string;
   text: string;
   createdAt: string;
@@ -23,9 +24,52 @@ type ServerMessage =
     };
 
 const websocketUrl = process.env.NEXT_PUBLIC_WS_URL?.trim();
+const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
+
+const parseChatMessage = (value: unknown): ChatMessage | null => {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.text !== "string" ||
+    typeof value.createdAt !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    name: value.name,
+    text: value.text,
+    createdAt: value.createdAt,
+  };
+};
+
+const mergeMessages = (
+  currentMessages: ChatMessage[],
+  incomingMessages: ChatMessage[],
+): ChatMessage[] => {
+  const messagesById = new Map(
+    currentMessages.map((message) => [message.id, message]),
+  );
+
+  for (const message of incomingMessages) {
+    messagesById.set(message.id, message);
+  }
+
+  return [...messagesById.values()].sort((left, right) => {
+    const dateComparison = left.createdAt.localeCompare(right.createdAt);
+
+    if (dateComparison !== 0) {
+      return dateComparison;
+    }
+
+    return left.id.length - right.id.length || left.id.localeCompare(right.id);
+  });
+};
 
 const parseServerMessage = (rawValue: string): ServerMessage | null => {
   try {
@@ -35,19 +79,16 @@ const parseServerMessage = (rawValue: string): ServerMessage | null => {
       return null;
     }
 
-    if (
-      value.type === "message.new" &&
-      typeof value.data.name === "string" &&
-      typeof value.data.text === "string" &&
-      typeof value.data.createdAt === "string"
-    ) {
+    if (value.type === "message.new") {
+      const message = parseChatMessage(value.data);
+
+      if (!message) {
+        return null;
+      }
+
       return {
         type: "message.new",
-        data: {
-          name: value.data.name,
-          text: value.data.text,
-          createdAt: value.data.createdAt,
-        },
+        data: message,
       };
     }
 
@@ -74,10 +115,58 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const requestController = new AbortController();
+
+    const loadMessageHistory = async () => {
+      if (!apiBaseUrl) {
+        setError("NEXT_PUBLIC_API_URL is not configured.");
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/messages`, {
+          signal: requestController.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `History request failed with status ${response.status}`,
+          );
+        }
+
+        const value: unknown = await response.json();
+
+        if (!isRecord(value) || !Array.isArray(value.messages)) {
+          throw new Error("History response has an invalid format");
+        }
+
+        const history = value.messages.map(parseChatMessage);
+
+        if (history.some((message) => message === null)) {
+          throw new Error("History response contains an invalid message");
+        }
+
+        setMessages((currentMessages) =>
+          mergeMessages(currentMessages, history as ChatMessage[]),
+        );
+      } catch (requestError) {
+        if (
+          requestError instanceof Error &&
+          requestError.name === "AbortError"
+        ) {
+          return;
+        }
+
+        setError("Message history could not be loaded.");
+      }
+    };
+
+    void loadMessageHistory();
+
     if (!websocketUrl) {
       setStatus("Disconnected");
       setError("NEXT_PUBLIC_WS_URL is not configured.");
-      return;
+      return () => requestController.abort();
     }
 
     setStatus("Connecting");
@@ -101,7 +190,9 @@ export default function Home() {
         return;
       }
 
-      setMessages((currentMessages) => [...currentMessages, message.data]);
+      setMessages((currentMessages) =>
+        mergeMessages(currentMessages, [message.data]),
+      );
     };
 
     socket.onerror = () => {
@@ -116,6 +207,7 @@ export default function Home() {
     };
 
     return () => {
+      requestController.abort();
       socket.onopen = null;
       socket.onmessage = null;
       socket.onerror = null;
@@ -166,7 +258,7 @@ export default function Home() {
       <section className="chat-card" aria-labelledby="chat-title">
         <header className="chat-header">
           <div>
-            <p className="eyebrow">Step 1</p>
+            <p className="eyebrow">Step 2</p>
             <h1 id="chat-title">Realtime Chat</h1>
           </div>
           <div className={`status status-${status.toLowerCase()}`}>
@@ -194,11 +286,8 @@ export default function Home() {
               <span>Open this page in another tab and say hello.</span>
             </div>
           ) : (
-            messages.map((message, index) => (
-              <article
-                className="message"
-                key={`${message.createdAt}-${index}`}
-              >
+            messages.map((message) => (
+              <article className="message" key={message.id}>
                 <div className="message-meta">
                   <strong>{message.name}</strong>
                   <time dateTime={message.createdAt}>
