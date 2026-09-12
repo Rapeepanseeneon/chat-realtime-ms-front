@@ -188,10 +188,13 @@ h1 {
   color: #5268d9;
 }
 .auth-form {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: 17px;
 }
 .field {
+  position: relative;
   display: grid;
   gap: 7px;
 }
@@ -201,6 +204,8 @@ h1 {
   font-weight: 750;
 }
 .field input {
+  position: relative;
+  z-index: 1;
   width: 100%;
   border: 1px solid #d8dee9;
   border-radius: 12px;
@@ -208,6 +213,10 @@ h1 {
   outline: none;
   background: #fff;
   color: #172033;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-user-select: text;
+  user-select: text;
   transition:
     border-color 150ms ease,
     box-shadow 150ms ease;

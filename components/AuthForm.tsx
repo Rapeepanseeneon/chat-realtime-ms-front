@@ -10,6 +10,10 @@ const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const isRegister = mode === "register";
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -21,9 +25,10 @@ export function AuthForm({ mode }: AuthFormProps) {
       return;
     }
 
-    const form = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(form.entries());
-    if (isRegister && payload.password !== payload.confirmPassword) {
+    const payload = isRegister
+      ? { username, email, password, confirmPassword }
+      : { email, password };
+    if (isRegister && password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
@@ -64,6 +69,8 @@ export function AuthForm({ mode }: AuthFormProps) {
           <span>Username</span>
           <input
             name="username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
             required
             maxLength={50}
             autoComplete="username"
@@ -76,9 +83,14 @@ export function AuthForm({ mode }: AuthFormProps) {
         <input
           name="email"
           type="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
           required
           maxLength={254}
           autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
+          inputMode="email"
           placeholder="you@example.com"
         />
       </label>
@@ -87,6 +99,8 @@ export function AuthForm({ mode }: AuthFormProps) {
         <input
           name="password"
           type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
           required
           minLength={8}
           maxLength={128}
@@ -100,6 +114,8 @@ export function AuthForm({ mode }: AuthFormProps) {
           <input
             name="confirmPassword"
             type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
             required
             minLength={8}
             maxLength={128}
