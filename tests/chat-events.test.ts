@@ -133,6 +133,16 @@ test("ghost schedule/release snapshots cannot regress and reads exclude hidden d
     mergeMessages([released], [scheduled, ghost])[0].messageStatus,
     "sent",
   );
+  const laterNormal = {
+    ...original,
+    id: "20",
+    deliveryId: "20",
+    createdAt: released.createdAt,
+  };
+  assert.deepEqual(
+    mergeMessages([released], [laterNormal]).map((message) => message.id),
+    ["20", "1"],
+  );
   const receipt = {
     type: "message.read" as const,
     readerId: "20",

@@ -256,8 +256,11 @@ export const mergeMessages = (
     .sort(
       (left, right) =>
         left.createdAt.localeCompare(right.createdAt) ||
-        left.id.length - right.id.length ||
-        left.id.localeCompare(right.id),
+        (left.deliveryId ?? left.id).length -
+          (right.deliveryId ?? right.id).length ||
+        (left.deliveryId ?? left.id).localeCompare(
+          right.deliveryId ?? right.id,
+        ),
     );
 };
 
