@@ -1,4 +1,7 @@
 :root {
+  --brand-primary: #08467f;
+  --brand-primary-hover: #063363;
+  --brand-accent: #06aaba;
   color-scheme: light;
   font-family:
     Inter,
@@ -32,14 +35,10 @@ a {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(
-      circle at 12% 10%,
-      rgba(82, 104, 217, 0.18),
-      transparent 30%
-    ),
+    radial-gradient(circle at 12% 10%, rgba(8, 70, 127, 0.14), transparent 30%),
     radial-gradient(
       circle at 90% 86%,
-      rgba(87, 190, 171, 0.14),
+      rgba(6, 170, 186, 0.14),
       transparent 28%
     ),
     #f5f7fb;
@@ -61,23 +60,56 @@ a {
   text-align: center;
 }
 
-.brand-mark {
-  width: 72px;
-  height: 72px;
-  display: grid;
-  place-items: center;
-  margin: 0 auto 24px;
-  border-radius: 22px;
-  background: linear-gradient(135deg, #5268d9, #7459d7);
-  color: white;
-  font-size: 1.5rem;
+.brand-logo {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  aspect-ratio: 680 / 535;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: white;
+  pointer-events: none;
+}
+/* Clip only the original JPG's whitespace, without stretching or editing it. */
+.brand-logo-image {
+  position: absolute;
+  width: 115.2941%;
+  max-width: none;
+  height: auto;
+  left: -10.2941%;
+  top: -59.8131%;
+}
+.brand-logo-large {
+  width: clamp(104px, 22vw, 136px);
+}
+.hero-brand {
+  margin-bottom: 24px;
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  color: var(--brand-primary);
   font-weight: 850;
-  box-shadow: 0 14px 30px rgba(82, 104, 217, 0.3);
+}
+.chat-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.chat-brand .brand-logo {
+  width: 28px;
+}
+.chat-brand .eyebrow {
+  margin-bottom: 0;
 }
 
 .eyebrow {
   margin: 0 0 8px;
-  color: #5268d9;
+  color: var(--brand-primary);
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.13em;
@@ -150,12 +182,12 @@ h1 {
   cursor: not-allowed;
 }
 .button-primary {
-  background: #5268d9;
+  background: var(--brand-primary);
   color: #fff;
-  box-shadow: 0 9px 22px rgba(82, 104, 217, 0.24);
+  box-shadow: 0 9px 22px rgba(8, 70, 127, 0.2);
 }
 .button-primary:hover:not(:disabled) {
-  background: #4056c7;
+  background: var(--brand-primary-hover);
 }
 .button-secondary {
   border-color: #d8deeb;
@@ -185,7 +217,7 @@ h1 {
   text-decoration: none;
 }
 .back-link:hover {
-  color: #5268d9;
+  color: var(--brand-primary);
 }
 .auth-form {
   position: relative;
@@ -215,7 +247,7 @@ h1 {
     box-shadow 150ms ease;
 }
 .field input:focus {
-  border-color: #5268d9;
+  border-color: var(--brand-primary);
   box-shadow: 0 0 0 3px rgba(82, 104, 217, 0.14);
 }
 .auth-form .field {
@@ -251,7 +283,7 @@ h1 {
   font-size: 0.9rem;
 }
 .auth-switch a {
-  color: #5268d9;
+  color: var(--brand-primary);
   font-weight: 750;
 }
 .form-actions {
@@ -302,7 +334,11 @@ h1 {
   display: grid;
   place-items: center;
   border-radius: 12px;
-  background: linear-gradient(135deg, #5268d9, #7459d7);
+  background: linear-gradient(
+    135deg,
+    var(--brand-primary),
+    var(--brand-accent)
+  );
   color: #fff;
   font-size: 0.88rem;
   box-shadow: 0 8px 18px rgba(82, 104, 217, 0.24);
@@ -392,13 +428,13 @@ h1 {
 }
 .sidebar-nav-link:hover,
 .sidebar-nav-link:focus-visible {
-  background: #f0f2fa;
-  color: #4056c7;
+  background: #eef8fa;
+  color: var(--brand-primary);
   outline: none;
 }
 .sidebar-nav-link-active {
-  background: #eaedfb;
-  color: #4056c7;
+  background: #e5f3f6;
+  color: var(--brand-primary);
 }
 .sidebar-contacts {
   min-height: 0;
@@ -578,10 +614,10 @@ h1 {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-left: 3px solid #5268d9;
+  border-left: 3px solid var(--brand-primary);
   border-radius: 8px;
   background: #edf0fc;
-  color: #4056c7;
+  color: var(--brand-primary-hover);
   font-size: 0.8rem;
   min-width: 0;
 }
@@ -592,7 +628,7 @@ h1 {
   width: 32px;
   min-width: 32px;
   padding: 4px;
-  color: #4056c7;
+  color: var(--brand-primary-hover);
   background: transparent;
   font-size: 1.3rem;
 }
@@ -619,7 +655,7 @@ h1 {
 .sidebar-contact:hover,
 .sidebar-contact:focus-visible {
   background: #f1f3fa;
-  color: #4056c7;
+  color: var(--brand-primary-hover);
   outline: none;
 }
 .sidebar-contact:focus-visible {
@@ -627,7 +663,7 @@ h1 {
 }
 .sidebar-contact-active {
   background: #eaedfb;
-  color: #4056c7;
+  color: var(--brand-primary-hover);
 }
 .sidebar-contact-avatar {
   position: relative;
@@ -672,7 +708,7 @@ h1 {
   min-width: 23px;
   padding: 4px 6px;
   border-radius: 999px;
-  background: #5268d9;
+  background: var(--brand-primary);
   color: #fff;
   font-size: 0.68rem;
   font-weight: 800;
@@ -689,7 +725,7 @@ h1 {
 .chat-typing {
   min-height: 16px;
   margin: -8px 2px;
-  color: #5268d9;
+  color: var(--brand-primary);
   font-size: 0.78rem;
   font-weight: 650;
 }
@@ -849,8 +885,8 @@ h1 {
 }
 .private-message-own {
   align-self: flex-end;
-  border-color: #5268d9;
-  background: #5268d9;
+  border-color: var(--brand-primary);
+  background: var(--brand-primary);
   color: #fff;
 }
 .private-message-own .message-meta strong,
@@ -876,7 +912,7 @@ h1 {
   border: 0;
   border-radius: 12px;
   padding: 0 22px;
-  background: #5268d9;
+  background: var(--brand-primary);
   color: #fff;
   font-weight: 750;
   cursor: pointer;
@@ -959,7 +995,7 @@ h1 {
   color: #172033;
 }
 .friend-search-form input:focus {
-  border-color: #5268d9;
+  border-color: var(--brand-primary);
   box-shadow: 0 0 0 3px rgba(82, 104, 217, 0.14);
 }
 .friend-search-form button,
@@ -968,7 +1004,7 @@ h1 {
   border: 0;
   border-radius: 11px;
   padding: 0 15px;
-  background: #5268d9;
+  background: var(--brand-primary);
   color: #fff;
   font-size: 0.8rem;
   font-weight: 760;
@@ -1027,7 +1063,7 @@ h1 {
 .friend-requests-heading button {
   border: 0;
   background: transparent;
-  color: #5268d9;
+  color: var(--brand-primary);
   font-size: 0.8rem;
   font-weight: 750;
   cursor: pointer;

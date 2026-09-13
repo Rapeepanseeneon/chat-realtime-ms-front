@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLogo } from "../components/BrandLogo";
 import { LogoutButton } from "../components/LogoutButton";
 import { getCurrentUser } from "../lib/auth";
 
@@ -7,8 +8,8 @@ export default async function Home() {
   return (
     <main className="site-shell">
       <section className="hero-card">
-        <div className="brand-mark" aria-hidden="true">
-          Pb
+        <div className="hero-brand">
+          <BrandLogo size="large" decorative />
         </div>
         <p className="eyebrow">Pb Messenger</p>
         <h1>Welcome to Pb Messenger</h1>

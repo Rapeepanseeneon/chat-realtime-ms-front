@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { ChatSidebar } from "../../components/ChatSidebar";
+import { BrandLogo } from "../../components/BrandLogo";
 import { FriendManager } from "../../components/FriendManager";
 import { MessageBubble } from "../../components/MessageBubble";
 import type { GhostCommand } from "../../components/GhostMessage";
@@ -672,7 +673,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           <section className="chat-card" aria-labelledby="chat-title">
             <header className="chat-header">
               <div className="chat-title-block">
-                <p className="eyebrow">Private conversation</p>
+                <div className="chat-brand">
+                  <BrandLogo decorative />
+                  <p className="eyebrow">Pb Messenger</p>
+                </div>
                 <h1 id="chat-title">
                   {selectedUser?.username ?? "Private Chat"}
                 </h1>

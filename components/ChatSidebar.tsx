@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { ChatFriend, ChatUser } from "../lib/chat-types";
 import { LogoutButton } from "./LogoutButton";
+import { BrandLogo } from "./BrandLogo";
 
 type ChatSidebarProps = {
   username: string;
@@ -122,7 +123,7 @@ export function ChatSidebar({
             href="/"
             onClick={() => closeDrawer()}
           >
-            <span className="sidebar-brand-mark">Pb</span>
+            <BrandLogo decorative />
             <span>Pb Messenger</span>
           </Link>
           <button

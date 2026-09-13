@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLogo } from "../../components/BrandLogo";
 import { redirect } from "next/navigation";
 import { AuthForm } from "../../components/AuthForm";
 import { getCurrentUser } from "../../lib/auth";
@@ -16,6 +17,10 @@ export default async function LoginPage({
         <Link className="back-link" href="/">
           ← Home
         </Link>
+        <div className="auth-brand">
+          <BrandLogo decorative />
+          <span>Pb Messenger</span>
+        </div>
         <p className="eyebrow">Welcome back</p>
         <h1 id="login-title">Login to Pb Messenger</h1>
         <p className="card-copy">
