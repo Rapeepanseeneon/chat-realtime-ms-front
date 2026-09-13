@@ -11,6 +11,7 @@ import {
 import { ChatSidebar } from "../../components/ChatSidebar";
 import { FriendManager } from "../../components/FriendManager";
 import { MessageBubble } from "../../components/MessageBubble";
+import type { GhostCommand } from "../../components/GhostMessage";
 import type {
   ChatFriend,
   ChatUser,
@@ -22,6 +23,7 @@ import {
   applyMessageMutation,
   isRecord,
   mergeMessages,
+  newerMessage,
   parseChatFriend,
   parsePrivateMessage,
   parseServerMessage,
@@ -58,6 +60,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const [replyId, setReplyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPending, setEditPending] = useState(false);
+  const [ghostBusyId, setGhostBusyId] = useState<string | null>(null);
+  const [ghostCreating, setGhostCreating] = useState(false);
+  const ghostBusyRef = useRef<string | null>(null);
+  const ghostCreatingRef = useRef<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const pendingEditRef = useRef<string | null>(null);
   const pendingDeleteRef = useRef<string | null>(null);
@@ -103,7 +109,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     ? (presence[selectedUser.id]?.online ?? selectedUser.online)
     : false;
   const lastOwnMessageId = messages.findLast(
-    (message) => message.senderId === currentUser.id && !message.deletedAt,
+    (message) =>
+      message.senderId === currentUser.id &&
+      !message.deletedAt &&
+      message.messageStatus === "sent",
   )?.id;
   const replyMessage = messages.find((message) => message.id === replyId);
   const editingMessage = messages.find((message) => message.id === editingId);
@@ -132,13 +141,15 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       (message) =>
         message.senderId === friendId &&
         message.receiverId === currentUser.id &&
+        message.messageStatus === "sent" &&
         !message.deletedAt &&
         !message.readAt,
     );
     if (!latestIncoming) return;
     const previous = readRequestsRef.current.get(friendId);
-    if (previous && BigInt(previous) >= BigInt(latestIncoming.id)) return;
-    readRequestsRef.current.set(friendId, latestIncoming.id);
+    const deliveryId = latestIncoming.deliveryId ?? latestIncoming.id;
+    if (previous && BigInt(previous) >= BigInt(deliveryId)) return;
+    readRequestsRef.current.set(friendId, deliveryId);
     socket.send(
       JSON.stringify({
         type: "message.read",
@@ -224,6 +235,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         pendingDeleteRef.current = null;
         setEditPending(false);
         setDeletingId(null);
+        ghostBusyRef.current = null;
+        ghostCreatingRef.current = null;
+        setGhostBusyId(null);
+        setGhostCreating(false);
         setConnectionError(serverMessage.data.message);
         return;
       }
@@ -245,8 +260,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         const previous = readReceiptsRef.current.get(key);
         if (
           !previous ||
-          BigInt(previous.throughMessageId) <
-            BigInt(serverMessage.throughMessageId)
+          BigInt(previous.throughDeliveryId ?? previous.throughMessageId) <
+            BigInt(
+              serverMessage.throughDeliveryId ?? serverMessage.throughMessageId,
+            )
         )
           readReceiptsRef.current.set(key, serverMessage);
         setMessages((current) => applyReadReceipt(current, serverMessage));
@@ -309,7 +326,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       if (
         serverMessage.type !== "message.new" &&
         serverMessage.type !== "message.edited" &&
-        serverMessage.type !== "message.deleted"
+        serverMessage.type !== "message.deleted" &&
+        serverMessage.type !== "ghost.updated"
       )
         return;
 
@@ -320,9 +338,29 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         message.receiverId !== currentUser.id
       )
         return;
+      if (
+        message.messageStatus !== "sent" &&
+        message.senderId !== currentUser.id
+      )
+        return;
+      if (ghostBusyRef.current === message.id) {
+        ghostBusyRef.current = null;
+        setGhostBusyId(null);
+      }
+      if (
+        serverMessage.type === "ghost.updated" &&
+        ghostCreatingRef.current === message.receiverId
+      ) {
+        ghostCreatingRef.current = null;
+        setGhostCreating(false);
+        if (selectedUserIdRef.current === message.receiverId) {
+          setText("");
+          setReplyId(null);
+        }
+      }
       if (serverMessage.type !== "message.new") {
         const cached = mutationCacheRef.current.get(message.id);
-        const canonical = mergeMessages(cached ? [cached] : [], [message])[0]!;
+        const canonical = newerMessage(cached, message);
         mutationCacheRef.current.set(message.id, canonical);
         if (pendingEditRef.current === message.id) {
           pendingEditRef.current = null;
@@ -335,7 +373,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           setDeletingId(null);
         }
         if (belongsToPair(canonical, currentUser.id, activeUserId)) {
-          setMessages((current) => applyMessageMutation(current, canonical));
+          setMessages((current) =>
+            serverMessage.type === "ghost.updated"
+              ? mergeMessages(current, [canonical])
+              : applyMessageMutation(current, canonical),
+          );
         }
         return;
       }
@@ -347,6 +389,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             message.receiverId === currentUser.id));
 
       if (belongsToActiveConversation) {
+        if (message.releasedAt)
+          mutationCacheRef.current.set(
+            message.id,
+            newerMessage(mutationCacheRef.current.get(message.id), message),
+          );
         setMessages((current) =>
           mergeMessages(current, applyKnownReceipts([message])),
         );
@@ -356,6 +403,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       setConnectionError("WebSocket connection failed.");
     };
     socket.onclose = () => {
+      ghostBusyRef.current = null;
+      ghostCreatingRef.current = null;
+      setGhostBusyId(null);
+      setGhostCreating(false);
       pendingEditRef.current = null;
       pendingDeleteRef.current = null;
       setEditPending(false);
@@ -480,8 +531,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setHistoryError(null);
   };
 
-  const sendMessage = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const sendCurrentMessage = (ghost = false) => {
     const socket = socketRef.current;
     const trimmedText = text.trim();
     if (!selectedUser) {
@@ -493,6 +543,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       return;
     }
     if (!trimmedText) return;
+    if (ghostCreatingRef.current) return;
     if (editingId) {
       if (pendingEditRef.current || !editingMessage || editingMessage.deletedAt)
         return;
@@ -500,7 +551,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       setEditPending(true);
       socket.send(
         JSON.stringify({
-          type: "message.edit",
+          type:
+            editingMessage.messageStatus === "sent"
+              ? "message.edit"
+              : "ghost.edit",
           messageId: editingId,
           message: trimmedText,
         }),
@@ -510,16 +564,25 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     }
     socket.send(
       JSON.stringify({
-        type: "message.send",
+        type: ghost ? "ghost.create" : "message.send",
         receiverId: selectedUser.id,
         message: trimmedText,
         replyToMessageId: replyId,
       }),
     );
     stopTyping();
+    if (ghost) {
+      ghostCreatingRef.current = selectedUser.id;
+      setGhostCreating(true);
+      return;
+    }
     setText("");
     setReplyId(null);
     setConnectionError(null);
+  };
+  const sendMessage = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    sendCurrentMessage();
   };
 
   const closeFriendManager = useCallback(() => {
@@ -557,14 +620,32 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       message.deletedAt
     )
       return;
-    if (!window.confirm("Delete this message for everyone?")) return;
+    const ghost = message.messageStatus !== "sent";
+    if (
+      !window.confirm(
+        ghost
+          ? "Delete this private ghost? Your friend has never seen it."
+          : "Delete this message for everyone?",
+      )
+    )
+      return;
     const socket = socketRef.current;
     if (socket?.readyState !== WebSocket.OPEN) return;
     pendingDeleteRef.current = message.id;
     setDeletingId(message.id);
     socket.send(
-      JSON.stringify({ type: "message.delete", messageId: message.id }),
+      JSON.stringify({
+        type: ghost ? "ghost.delete" : "message.delete",
+        messageId: message.id,
+      }),
     );
+  };
+  const sendGhostCommand = (command: GhostCommand) => {
+    const socket = socketRef.current;
+    if (ghostBusyRef.current || socket?.readyState !== WebSocket.OPEN) return;
+    ghostBusyRef.current = command.messageId;
+    setGhostBusyId(command.messageId);
+    socket.send(JSON.stringify(command));
   };
 
   const displayedError = friendsError ?? historyError ?? connectionError;
@@ -643,11 +724,14 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                     disabled={
                       status !== "Connected" ||
                       editPending ||
-                      deletingId !== null
+                      deletingId !== null ||
+                      ghostBusyId !== null ||
+                      ghostCreating
                     }
                     onReply={startReply}
                     onEdit={startEdit}
                     onDelete={deleteMessage}
+                    onGhostCommand={sendGhostCommand}
                   />
                 ))
               )}
@@ -718,7 +802,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                       : "Select a friend first"
                   }
                   maxLength={1_000}
-                  disabled={!selectedUser || editPending}
+                  disabled={!selectedUser || editPending || ghostCreating}
                 />
               </label>
               <button
@@ -727,11 +811,27 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   status !== "Connected" ||
                   !selectedUser ||
                   !text.trim() ||
-                  editPending
+                  editPending ||
+                  ghostCreating
                 }
               >
                 {editPending ? "Saving…" : editingId ? "Save" : "Send"}
               </button>
+              {!editingId ? (
+                <button
+                  type="button"
+                  className="ghost-create-button"
+                  disabled={
+                    status !== "Connected" ||
+                    !selectedUser ||
+                    !text.trim() ||
+                    ghostCreating
+                  }
+                  onClick={() => sendCurrentMessage(true)}
+                >
+                  {ghostCreating ? "Creating Ghost…" : "👻 Ghost"}
+                </button>
+              ) : null}
             </form>
           </section>
         </div>

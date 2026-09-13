@@ -43,6 +43,14 @@ export const parsePrivateMessage = (value: unknown): PrivateMessage | null => {
     (value.readAt !== null && typeof value.readAt !== "string") ||
     !isNullableDate(value.editedAt) ||
     !isNullableDate(value.deletedAt) ||
+    !isNullableDate(value.scheduledAt) ||
+    !isNullableDate(value.releasedAt) ||
+    !isNullableDate(value.stateUpdatedAt) ||
+    (value.messageStatus != null &&
+      !["ghost", "scheduled", "sent", "cancelled"].includes(
+        String(value.messageStatus),
+      )) ||
+    (value.deliveryId != null && !isId(value.deliveryId)) ||
     (value.replyToMessageId != null && !isId(value.replyToMessageId))
   )
     return null;
@@ -76,6 +84,19 @@ export const parsePrivateMessage = (value: unknown): PrivateMessage | null => {
     messageText: value.deletedAt ? "" : value.messageText,
     createdAt: value.createdAt,
     readAt: value.readAt,
+    messageStatus: (value.messageStatus ??
+      "sent") as PrivateMessage["messageStatus"],
+    scheduledAt:
+      typeof value.scheduledAt === "string" ? value.scheduledAt : null,
+    releasedAt: typeof value.releasedAt === "string" ? value.releasedAt : null,
+    stateUpdatedAt:
+      typeof value.stateUpdatedAt === "string" ? value.stateUpdatedAt : null,
+    deliveryId:
+      value.messageStatus == null || value.messageStatus === "sent"
+        ? typeof value.deliveryId === "string"
+          ? value.deliveryId
+          : value.id
+        : null,
     editedAt: typeof value.editedAt === "string" ? value.editedAt : null,
     deletedAt: typeof value.deletedAt === "string" ? value.deletedAt : null,
     replyToMessageId:
@@ -93,7 +114,8 @@ export const parseServerMessage = (raw: string): ServerMessage | null => {
     if (
       value.type === "message.new" ||
       value.type === "message.edited" ||
-      value.type === "message.deleted"
+      value.type === "message.deleted" ||
+      value.type === "ghost.updated"
     ) {
       const message = parsePrivateMessage(value.message);
       return message ? { type: value.type, message } : null;
@@ -117,12 +139,17 @@ export const parseServerMessage = (raw: string): ServerMessage | null => {
       return isId(value.readerId) &&
         isId(value.senderId) &&
         isId(value.throughMessageId) &&
+        (value.throughDeliveryId == null || isId(value.throughDeliveryId)) &&
         typeof value.readAt === "string"
         ? {
             type: "message.read",
             readerId: value.readerId,
             senderId: value.senderId,
             throughMessageId: value.throughMessageId,
+            throughDeliveryId:
+              typeof value.throughDeliveryId === "string"
+                ? value.throughDeliveryId
+                : undefined,
             readAt: value.readAt,
           }
         : null;
@@ -200,12 +227,7 @@ export const mergeMessages = (
   const byId = new Map(current.map((message) => [message.id, message]));
   for (const message of incoming) {
     const previous = byId.get(message.id);
-    const latest =
-      previous &&
-      (previous.deletedAt ||
-        (previous.editedAt ?? "") > (message.editedAt ?? ""))
-        ? previous
-        : message;
+    const latest = newerMessage(previous, message);
     byId.set(message.id, {
       ...latest,
       readAt: previous?.readAt ?? message.readAt,
@@ -229,12 +251,36 @@ export const mergeMessages = (
         }
       : message;
   });
-  return updated.sort(
-    (left, right) =>
-      left.createdAt.localeCompare(right.createdAt) ||
-      left.id.length - right.id.length ||
-      left.id.localeCompare(right.id),
-  );
+  return updated
+    .filter((message) => message.messageStatus !== "cancelled")
+    .sort(
+      (left, right) =>
+        left.createdAt.localeCompare(right.createdAt) ||
+        left.id.length - right.id.length ||
+        left.id.localeCompare(right.id),
+    );
+};
+
+export const newerMessage = (
+  previous: PrivateMessage | undefined,
+  message: PrivateMessage,
+) => {
+  if (previous?.deletedAt) return previous;
+  // Release is terminal: even same-millisecond/stale schedule snapshots cannot
+  // make a delivered message look private again.
+  if (previous?.messageStatus === "sent" && message.messageStatus !== "sent")
+    return previous;
+  if (
+    previous &&
+    previous.messageStatus !== "sent" &&
+    message.messageStatus === "sent"
+  )
+    return message;
+  return previous &&
+    ((previous.stateUpdatedAt ?? "") > (message.stateUpdatedAt ?? "") ||
+      (previous.editedAt ?? "") > (message.editedAt ?? ""))
+    ? previous
+    : message;
 };
 
 const newerReply = (
@@ -275,7 +321,9 @@ export const applyReadReceipt = (
   messages.map((message) =>
     message.senderId === receipt.senderId &&
     message.receiverId === receipt.readerId &&
-    BigInt(message.id) <= BigInt(receipt.throughMessageId)
+    message.messageStatus === "sent" &&
+    BigInt(message.deliveryId ?? message.id) <=
+      BigInt(receipt.throughDeliveryId ?? receipt.throughMessageId)
       ? { ...message, readAt: message.readAt ?? receipt.readAt }
       : message,
   );

@@ -5,6 +5,7 @@ import {
   mergeMessages,
   parsePrivateMessage,
   parseServerMessage,
+  applyReadReceipt,
 } from "../lib/chat-events";
 import type { PrivateMessage } from "../lib/chat-types";
 
@@ -15,6 +16,11 @@ const original: PrivateMessage = {
   messageText: "old",
   createdAt: "2026-09-13T00:00:00.000Z",
   readAt: null,
+  messageStatus: "sent",
+  scheduledAt: null,
+  releasedAt: null,
+  stateUpdatedAt: null,
+  deliveryId: "1",
   editedAt: null,
   deletedAt: null,
   replyToMessageId: null,
@@ -93,4 +99,64 @@ test("events validate ids and sanitize deleted content including quotes", () => 
   );
   assert.equal(parsePrivateMessage({ ...original, id: "invalid" }), null);
   assert.equal(parsePrivateMessage({ ...reply, replyToMessageId: "3" }), null);
+});
+
+test("ghost schedule/release snapshots cannot regress and reads exclude hidden drafts", () => {
+  const ghost: PrivateMessage = {
+    ...original,
+    messageStatus: "ghost",
+    deliveryId: null,
+    stateUpdatedAt: "2026-09-13T00:00:00.000Z",
+  };
+  const scheduled: PrivateMessage = {
+    ...ghost,
+    messageStatus: "scheduled",
+    scheduledAt: "2026-09-14T00:00:00.000Z",
+    stateUpdatedAt: "2026-09-13T00:01:00.000Z",
+  };
+  const cancelledSchedule: PrivateMessage = {
+    ...ghost,
+    stateUpdatedAt: "2026-09-13T00:02:00.000Z",
+  };
+  assert.equal(
+    mergeMessages([cancelledSchedule], [scheduled])[0].messageStatus,
+    "ghost",
+  );
+  const released: PrivateMessage = {
+    ...ghost,
+    messageStatus: "sent",
+    deliveryId: "30",
+    releasedAt: "2026-09-13T00:03:00.000Z",
+    stateUpdatedAt: "2026-09-13T00:03:00.000Z",
+  };
+  assert.equal(
+    mergeMessages([released], [scheduled, ghost])[0].messageStatus,
+    "sent",
+  );
+  const receipt = {
+    type: "message.read" as const,
+    readerId: "20",
+    senderId: "10",
+    throughMessageId: "20",
+    throughDeliveryId: "20",
+    readAt: "2026-09-13T00:02:30.000Z",
+  };
+  assert.equal(applyReadReceipt([ghost], receipt)[0].readAt, null);
+  assert.equal(applyReadReceipt([released], receipt)[0].readAt, null);
+  assert.equal(
+    applyReadReceipt([released], {
+      ...receipt,
+      throughMessageId: "1",
+      throughDeliveryId: "30",
+    })[0].readAt,
+    receipt.readAt,
+  );
+  const removed: PrivateMessage = {
+    ...ghost,
+    messageStatus: "cancelled",
+    deletedAt: "2026-09-13T00:04:00.000Z",
+    stateUpdatedAt: "2026-09-13T00:04:00.000Z",
+    messageText: "",
+  };
+  assert.equal(mergeMessages([removed], [ghost]).length, 0);
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import type { PrivateMessage } from "../lib/chat-types";
+import { GhostMessage, type GhostCommand } from "./GhostMessage";
 
 type Props = {
   message: PrivateMessage;
@@ -11,6 +12,7 @@ type Props = {
   onReply: (message: PrivateMessage) => void;
   onEdit: (message: PrivateMessage) => void;
   onDelete: (message: PrivateMessage) => void;
+  onGhostCommand: (command: GhostCommand) => void;
 };
 
 export function MessageBubble({
@@ -22,8 +24,19 @@ export function MessageBubble({
   onReply,
   onEdit,
   onDelete,
+  onGhostCommand,
 }: Props) {
   const own = message.senderId === currentUserId;
+  if (message.messageStatus !== "sent")
+    return own && message.messageStatus !== "cancelled" ? (
+      <GhostMessage
+        message={message}
+        disabled={disabled}
+        onCommand={onGhostCommand}
+        onEdit={onEdit}
+        onDelete={onDelete}
+      />
+    ) : null;
   return (
     <article
       className={`message private-message ${own ? "private-message-own" : "private-message-other"}`}

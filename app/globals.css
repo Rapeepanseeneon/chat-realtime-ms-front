@@ -527,6 +527,50 @@ h1 {
   font-style: italic;
   opacity: 0.75;
 }
+.private-message.ghost-message {
+  background: #f1edff;
+  color: #64528f;
+  border: 1px dashed #a89aca;
+}
+.private-message.ghost-message .message-meta strong,
+.private-message.ghost-message .message-meta time {
+  color: #64528f;
+}
+.ghost-privacy {
+  display: block;
+  font-size: 0.72rem;
+  margin: 5px 0 10px;
+}
+.ghost-scheduled {
+  font-size: 0.72rem;
+  margin-top: 10px;
+}
+.ghost-schedule-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 0.78rem;
+  min-width: 0;
+}
+.ghost-schedule-form input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #a89aca;
+  border-radius: 8px;
+  padding: 8px;
+  color: #43385d;
+  background: #fff;
+  font: inherit;
+}
+.ghost-schedule-form input:focus-visible {
+  outline: 2px solid #64528f;
+  outline-offset: 2px;
+}
+.message-form .ghost-create-button {
+  grid-column: 1 / -1;
+  background: #eee8fc;
+  color: #64528f;
+}
 .composer-context {
   grid-column: 1 / -1;
   display: flex;

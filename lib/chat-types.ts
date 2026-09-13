@@ -10,6 +10,7 @@ export type ReadReceipt = {
   readerId: string;
   senderId: string;
   throughMessageId: string;
+  throughDeliveryId?: string;
   readAt: string;
 };
 
@@ -21,7 +22,8 @@ export type TypingEvent = {
 
 export type ServerMessage =
   | {
-      type: "message.new" | "message.edited" | "message.deleted";
+      type:
+        "message.new" | "message.edited" | "message.deleted" | "ghost.updated";
       message: PrivateMessage;
     }
   | ReadReceipt
@@ -66,6 +68,11 @@ export type PrivateMessage = {
   messageText: string;
   createdAt: string;
   readAt: string | null;
+  messageStatus: "ghost" | "scheduled" | "sent" | "cancelled";
+  scheduledAt: string | null;
+  releasedAt: string | null;
+  stateUpdatedAt: string | null;
+  deliveryId: string | null;
   editedAt: string | null;
   deletedAt: string | null;
   replyToMessageId: string | null;
