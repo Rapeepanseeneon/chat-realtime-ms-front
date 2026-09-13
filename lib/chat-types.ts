@@ -20,7 +20,10 @@ export type TypingEvent = {
 };
 
 export type ServerMessage =
-  | { type: "message.new"; message: PrivateMessage }
+  | {
+      type: "message.new" | "message.edited" | "message.deleted";
+      message: PrivateMessage;
+    }
   | ReadReceipt
   | TypingEvent
   | {
@@ -63,4 +66,14 @@ export type PrivateMessage = {
   messageText: string;
   createdAt: string;
   readAt: string | null;
+  editedAt: string | null;
+  deletedAt: string | null;
+  replyToMessageId: string | null;
+  reply: {
+    id: string;
+    senderId: string;
+    messageText: string;
+    editedAt: string | null;
+    deletedAt: string | null;
+  } | null;
 };

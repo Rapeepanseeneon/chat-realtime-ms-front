@@ -11,6 +11,9 @@ const isId = (value: unknown): value is string =>
   typeof value === "string" && /^[1-9]\d{0,18}$/.test(value);
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const isNullableDate = (value: unknown) =>
+  value == null ||
+  (typeof value === "string" && Number.isFinite(Date.parse(value)));
 
 export const parseChatFriend = (value: unknown): ChatFriend | null => {
   if (
@@ -37,16 +40,49 @@ export const parsePrivateMessage = (value: unknown): PrivateMessage | null => {
     !isId(value.receiverId) ||
     typeof value.messageText !== "string" ||
     typeof value.createdAt !== "string" ||
-    (value.readAt !== null && typeof value.readAt !== "string")
+    (value.readAt !== null && typeof value.readAt !== "string") ||
+    !isNullableDate(value.editedAt) ||
+    !isNullableDate(value.deletedAt) ||
+    (value.replyToMessageId != null && !isId(value.replyToMessageId))
   )
     return null;
+  let reply: PrivateMessage["reply"] = null;
+  if (value.reply != null) {
+    const original = value.reply;
+    if (
+      !isRecord(original) ||
+      !isId(original.id) ||
+      !isId(original.senderId) ||
+      original.id !== value.replyToMessageId ||
+      typeof original.messageText !== "string" ||
+      !isNullableDate(original.editedAt) ||
+      !isNullableDate(original.deletedAt)
+    )
+      return null;
+    reply = {
+      id: original.id,
+      senderId: original.senderId,
+      messageText: original.deletedAt ? "" : original.messageText,
+      editedAt:
+        typeof original.editedAt === "string" ? original.editedAt : null,
+      deletedAt:
+        typeof original.deletedAt === "string" ? original.deletedAt : null,
+    };
+  }
   return {
     id: value.id,
     senderId: value.senderId,
     receiverId: value.receiverId,
-    messageText: value.messageText,
+    messageText: value.deletedAt ? "" : value.messageText,
     createdAt: value.createdAt,
     readAt: value.readAt,
+    editedAt: typeof value.editedAt === "string" ? value.editedAt : null,
+    deletedAt: typeof value.deletedAt === "string" ? value.deletedAt : null,
+    replyToMessageId:
+      typeof value.replyToMessageId === "string"
+        ? value.replyToMessageId
+        : null,
+    reply,
   };
 };
 
@@ -54,9 +90,13 @@ export const parseServerMessage = (raw: string): ServerMessage | null => {
   try {
     const value: unknown = JSON.parse(raw);
     if (!isRecord(value)) return null;
-    if (value.type === "message.new") {
+    if (
+      value.type === "message.new" ||
+      value.type === "message.edited" ||
+      value.type === "message.deleted"
+    ) {
       const message = parsePrivateMessage(value.message);
-      return message ? { type: "message.new", message } : null;
+      return message ? { type: value.type, message } : null;
     }
     if (
       value.type === "error" &&
@@ -160,18 +200,73 @@ export const mergeMessages = (
   const byId = new Map(current.map((message) => [message.id, message]));
   for (const message of incoming) {
     const previous = byId.get(message.id);
+    const latest =
+      previous &&
+      (previous.deletedAt ||
+        (previous.editedAt ?? "") > (message.editedAt ?? ""))
+        ? previous
+        : message;
     byId.set(message.id, {
-      ...message,
+      ...latest,
       readAt: previous?.readAt ?? message.readAt,
+      reply: newerReply(previous?.reply ?? null, message.reply),
     });
   }
-  return [...byId.values()].sort(
+  const updated = [...byId.values()].map((message) => {
+    const original = message.replyToMessageId
+      ? byId.get(message.replyToMessageId)
+      : null;
+    return original
+      ? {
+          ...message,
+          reply: newerReply(message.reply, {
+            id: original.id,
+            senderId: original.senderId,
+            messageText: original.messageText,
+            editedAt: original.editedAt,
+            deletedAt: original.deletedAt,
+          }),
+        }
+      : message;
+  });
+  return updated.sort(
     (left, right) =>
       left.createdAt.localeCompare(right.createdAt) ||
       left.id.length - right.id.length ||
       left.id.localeCompare(right.id),
   );
 };
+
+const newerReply = (
+  left: PrivateMessage["reply"],
+  right: PrivateMessage["reply"],
+) =>
+  left && (left.deletedAt || (left.editedAt ?? "") > (right?.editedAt ?? ""))
+    ? left
+    : (right ?? left);
+
+// Update quotations too, including originals outside the latest history page.
+export const applyMessageMutation = (
+  messages: PrivateMessage[],
+  updated: PrivateMessage,
+) =>
+  mergeMessages(
+    messages.map((message) =>
+      message.replyToMessageId === updated.id
+        ? {
+            ...message,
+            reply: newerReply(message.reply, {
+              id: updated.id,
+              senderId: updated.senderId,
+              messageText: updated.messageText,
+              editedAt: updated.editedAt,
+              deletedAt: updated.deletedAt,
+            }),
+          }
+        : message,
+    ),
+    messages.some((message) => message.id === updated.id) ? [updated] : [],
+  );
 
 export const applyReadReceipt = (
   messages: PrivateMessage[],

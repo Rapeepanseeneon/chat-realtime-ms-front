@@ -10,6 +10,7 @@ import {
 } from "react";
 import { ChatSidebar } from "../../components/ChatSidebar";
 import { FriendManager } from "../../components/FriendManager";
+import { MessageBubble } from "../../components/MessageBubble";
 import type {
   ChatFriend,
   ChatUser,
@@ -18,6 +19,7 @@ import type {
 } from "../../lib/chat-types";
 import {
   applyReadReceipt,
+  applyMessageMutation,
   isRecord,
   mergeMessages,
   parseChatFriend,
@@ -38,6 +40,14 @@ type ChatClientProps = {
 
 const websocketUrl = process.env.NEXT_PUBLIC_WS_URL?.trim();
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const belongsToPair = (
+  message: PrivateMessage,
+  ownId: string,
+  friendId: string | null,
+) =>
+  friendId !== null &&
+  ((message.senderId === ownId && message.receiverId === friendId) ||
+    (message.senderId === friendId && message.receiverId === ownId));
 
 export function ChatClient({ currentUser }: ChatClientProps) {
   const router = useRouter();
@@ -45,6 +55,13 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [text, setText] = useState("");
+  const [replyId, setReplyId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPending, setEditPending] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const pendingEditRef = useRef<string | null>(null);
+  const pendingDeleteRef = useRef<string | null>(null);
+  const mutationCacheRef = useRef(new Map<string, PrivateMessage>());
   const [status, setStatus] = useState<ConnectionStatus>("Connecting");
   const [friendsLoading, setFriendsLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -86,13 +103,17 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     ? (presence[selectedUser.id]?.online ?? selectedUser.online)
     : false;
   const lastOwnMessageId = messages.findLast(
-    (message) => message.senderId === currentUser.id,
+    (message) => message.senderId === currentUser.id && !message.deletedAt,
   )?.id;
+  const replyMessage = messages.find((message) => message.id === replyId);
+  const editingMessage = messages.find((message) => message.id === editingId);
 
   const applyKnownReceipts = useCallback((incoming: PrivateMessage[]) => {
     let updated = incoming;
     for (const receipt of readReceiptsRef.current.values())
       updated = applyReadReceipt(updated, receipt);
+    for (const mutation of mutationCacheRef.current.values())
+      updated = applyMessageMutation(updated, mutation);
     return updated;
   }, []);
 
@@ -111,6 +132,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       (message) =>
         message.senderId === friendId &&
         message.receiverId === currentUser.id &&
+        !message.deletedAt &&
         !message.readAt,
     );
     if (!latestIncoming) return;
@@ -198,6 +220,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       if (!serverMessage) return;
       if (serverMessage.type === "error") {
         readRequestsRef.current.clear();
+        pendingEditRef.current = null;
+        pendingDeleteRef.current = null;
+        setEditPending(false);
+        setDeletingId(null);
         setConnectionError(serverMessage.data.message);
         return;
       }
@@ -280,10 +306,39 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         }
         return;
       }
-      if (serverMessage.type !== "message.new") return;
+      if (
+        serverMessage.type !== "message.new" &&
+        serverMessage.type !== "message.edited" &&
+        serverMessage.type !== "message.deleted"
+      )
+        return;
 
       const activeUserId = selectedUserIdRef.current;
       const message = serverMessage.message;
+      if (
+        message.senderId !== currentUser.id &&
+        message.receiverId !== currentUser.id
+      )
+        return;
+      if (serverMessage.type !== "message.new") {
+        const cached = mutationCacheRef.current.get(message.id);
+        const canonical = mergeMessages(cached ? [cached] : [], [message])[0]!;
+        mutationCacheRef.current.set(message.id, canonical);
+        if (pendingEditRef.current === message.id) {
+          pendingEditRef.current = null;
+          setEditPending(false);
+          setEditingId(null);
+          setText("");
+        }
+        if (pendingDeleteRef.current === message.id) {
+          pendingDeleteRef.current = null;
+          setDeletingId(null);
+        }
+        if (belongsToPair(canonical, currentUser.id, activeUserId)) {
+          setMessages((current) => applyMessageMutation(current, canonical));
+        }
+        return;
+      }
       const belongsToActiveConversation =
         activeUserId !== null &&
         ((message.senderId === currentUser.id &&
@@ -301,6 +356,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       setConnectionError("WebSocket connection failed.");
     };
     socket.onclose = () => {
+      pendingEditRef.current = null;
+      pendingDeleteRef.current = null;
+      setEditPending(false);
+      setDeletingId(null);
       clearTyping();
       setStatus("Disconnected");
       if (socketRef.current === socket) socketRef.current = null;
@@ -398,6 +457,15 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    if (editingId && (!editingMessage || editingMessage.deletedAt)) {
+      setEditingId(null);
+      setText("");
+      pendingEditRef.current = null;
+      setEditPending(false);
+    }
+  }, [editingId, editingMessage]);
+
   const selectUser = (user: ChatUser) => {
     if (selectedUserIdRef.current === user.id) return;
     stopTyping();
@@ -405,6 +473,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setSelectedUserId(user.id);
     setMessages([]);
     setText("");
+    setReplyId(null);
+    setEditingId(null);
+    pendingEditRef.current = null;
+    setEditPending(false);
     setHistoryError(null);
   };
 
@@ -421,21 +493,79 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       return;
     }
     if (!trimmedText) return;
+    if (editingId) {
+      if (pendingEditRef.current || !editingMessage || editingMessage.deletedAt)
+        return;
+      pendingEditRef.current = editingId;
+      setEditPending(true);
+      socket.send(
+        JSON.stringify({
+          type: "message.edit",
+          messageId: editingId,
+          message: trimmedText,
+        }),
+      );
+      stopTyping();
+      return;
+    }
     socket.send(
       JSON.stringify({
         type: "message.send",
         receiverId: selectedUser.id,
         message: trimmedText,
+        replyToMessageId: replyId,
       }),
     );
     stopTyping();
     setText("");
+    setReplyId(null);
     setConnectionError(null);
   };
 
   const closeFriendManager = useCallback(() => {
     setIsFriendManagerOpen(false);
   }, []);
+
+  const cancelComposerAction = () => {
+    if (pendingEditRef.current) return;
+    stopTyping();
+    if (editingId) setText("");
+    setEditingId(null);
+    setReplyId(null);
+  };
+  const startReply = (message: PrivateMessage) => {
+    if (pendingEditRef.current) return;
+    if (editingId) setText("");
+    setEditingId(null);
+    setReplyId(message.id);
+  };
+  const startEdit = (message: PrivateMessage) => {
+    if (
+      message.senderId !== currentUser.id ||
+      message.deletedAt ||
+      pendingEditRef.current
+    )
+      return;
+    setReplyId(null);
+    setEditingId(message.id);
+    setText(message.messageText);
+  };
+  const deleteMessage = (message: PrivateMessage) => {
+    if (
+      pendingDeleteRef.current ||
+      message.senderId !== currentUser.id ||
+      message.deletedAt
+    )
+      return;
+    if (!window.confirm("Delete this message for everyone?")) return;
+    const socket = socketRef.current;
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    pendingDeleteRef.current = message.id;
+    setDeletingId(message.id);
+    socket.send(
+      JSON.stringify({ type: "message.delete", messageId: message.id }),
+    );
+  };
 
   const displayedError = friendsError ?? historyError ?? connectionError;
 
@@ -503,33 +633,23 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   </span>
                 </div>
               ) : (
-                messages.map((message) => {
-                  const isOwnMessage = message.senderId === currentUser.id;
-                  return (
-                    <article
-                      className={`message private-message ${isOwnMessage ? "private-message-own" : "private-message-other"}`}
-                      key={message.id}
-                    >
-                      <div className="message-meta">
-                        <strong>
-                          {isOwnMessage ? "You" : selectedUser.username}
-                        </strong>
-                        <time dateTime={message.createdAt}>
-                          {new Date(message.createdAt).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </time>
-                      </div>
-                      <p>{message.messageText}</p>
-                      {isOwnMessage && message.id === lastOwnMessageId ? (
-                        <span className="message-receipt">
-                          {message.readAt ? "Seen" : "Sent"}
-                        </span>
-                      ) : null}
-                    </article>
-                  );
-                })
+                messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    currentUserId={currentUser.id}
+                    friendName={selectedUser.username}
+                    showReceipt={message.id === lastOwnMessageId}
+                    disabled={
+                      status !== "Connected" ||
+                      editPending ||
+                      deletingId !== null
+                    }
+                    onReply={startReply}
+                    onEdit={startEdit}
+                    onDelete={deleteMessage}
+                  />
+                ))
               )}
               <div ref={messagesEndRef} />
             </div>
@@ -547,6 +667,36 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             ) : null}
 
             <form className="message-form" onSubmit={sendMessage}>
+              {replyId || editingId ? (
+                <div className="composer-context" role="status">
+                  <div>
+                    <strong>
+                      {editingId
+                        ? "Editing message"
+                        : "Replying to " +
+                          (replyMessage?.senderId === currentUser.id
+                            ? "yourself"
+                            : selectedUser?.username)}
+                    </strong>
+                    <span>
+                      {editingId
+                        ? editingMessage?.messageText
+                        : replyMessage?.deletedAt
+                          ? "This message was deleted"
+                          : replyMessage?.messageText}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="composer-cancel"
+                    disabled={editPending}
+                    onClick={cancelComposerAction}
+                    aria-label={editingId ? "Cancel editing" : "Cancel reply"}
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
               <label className="field message-field">
                 <span>
                   {selectedUser
@@ -568,16 +718,19 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                       : "Select a friend first"
                   }
                   maxLength={1_000}
-                  disabled={!selectedUser}
+                  disabled={!selectedUser || editPending}
                 />
               </label>
               <button
                 type="submit"
                 disabled={
-                  status !== "Connected" || !selectedUser || !text.trim()
+                  status !== "Connected" ||
+                  !selectedUser ||
+                  !text.trim() ||
+                  editPending
                 }
               >
-                Send
+                {editPending ? "Saving…" : editingId ? "Save" : "Send"}
               </button>
             </form>
           </section>

@@ -469,6 +469,89 @@ h1 {
   gap: 6px;
   overflow-y: auto;
 }
+
+.message-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.message-actions button {
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  padding: 4px 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.message-actions button:hover {
+  background: rgba(128, 140, 180, 0.15);
+}
+.message-actions button:focus-visible,
+.composer-cancel:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.message-actions button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.message-reply {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 3px solid currentColor;
+  border-radius: 5px;
+  background: rgba(128, 140, 180, 0.13);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+.message-reply span,
+.composer-context span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.message-edited {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.68rem;
+  opacity: 0.8;
+}
+.message-deleted {
+  font-style: italic;
+  opacity: 0.75;
+}
+.composer-context {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid #5268d9;
+  border-radius: 8px;
+  background: #edf0fc;
+  color: #4056c7;
+  font-size: 0.8rem;
+  min-width: 0;
+}
+.composer-context > div {
+  min-width: 0;
+}
+.message-form .composer-cancel {
+  width: 32px;
+  min-width: 32px;
+  padding: 4px;
+  color: #4056c7;
+  background: transparent;
+  font-size: 1.3rem;
+}
 .sidebar-contact {
   width: 100%;
   min-width: 0;
