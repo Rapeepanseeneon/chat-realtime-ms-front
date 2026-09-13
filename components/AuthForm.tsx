@@ -13,6 +13,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -96,17 +97,34 @@ export function AuthForm({ mode }: AuthFormProps) {
       </label>
       <label className="field">
         <span>Password</span>
-        <input
-          name="password"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-          minLength={8}
-          maxLength={128}
-          autoComplete={isRegister ? "new-password" : "current-password"}
-          placeholder="At least 8 characters"
-        />
+        <span className="password-control">
+          <input
+            id="auth-password"
+            name="password"
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+            minLength={8}
+            maxLength={128}
+            autoComplete={isRegister ? "new-password" : "current-password"}
+            placeholder="At least 8 characters"
+          />
+          <button
+            type="button"
+            className="password-toggle"
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            aria-pressed={showPassword}
+            aria-controls="auth-password"
+            onClick={() => setShowPassword((value) => !value)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+              <circle cx="12" cy="12" r="3" />
+              {showPassword ? <path d="m3 3 18 18" /> : null}
+            </svg>
+          </button>
+        </span>
       </label>
       {isRegister ? (
         <label className="field">
@@ -134,12 +152,12 @@ export function AuthForm({ mode }: AuthFormProps) {
         type="submit"
         disabled={pending}
       >
-        {pending ? "Please wait…" : isRegister ? "Create account" : "Login"}
+        {pending ? "Please wait…" : isRegister ? "Create account" : "Log in"}
       </button>
       <p className="auth-switch">
-        {isRegister ? "Already have an account? " : "New to Pb Messenger? "}
+        {isRegister ? "Already have an account? " : "Don't have an account? "}
         <Link href={isRegister ? "/login" : "/register"}>
-          {isRegister ? "Login" : "Sign Up"}
+          {isRegister ? "Log in" : "Sign up"}
         </Link>
       </p>
     </form>

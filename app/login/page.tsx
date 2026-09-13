@@ -12,20 +12,16 @@ export default async function LoginPage({
   if (await getCurrentUser()) redirect("/");
   const { registered } = await searchParams;
   return (
-    <main className="site-shell">
-      <section className="auth-card" aria-labelledby="login-title">
-        <Link className="back-link" href="/">
-          ← Home
-        </Link>
-        <div className="auth-brand">
+    <main className="site-shell auth-shell">
+      <header className="auth-page-header">
+        <Link className="auth-brand" href="/">
           <BrandLogo decorative />
           <span>Pb Messenger</span>
-        </div>
-        <p className="eyebrow">Welcome back</p>
-        <h1 id="login-title">Login to Pb Messenger</h1>
-        <p className="card-copy">
-          Enter your account details to continue to chat.
-        </p>
+        </Link>
+      </header>
+      <section className="auth-card" aria-labelledby="login-title">
+        <h1 id="login-title">Welcome back</h1>
+        <p className="card-copy">Message when you're ready.</p>
         {registered === "1" ? (
           <p className="form-message form-success">
             Account created. You can log in now.

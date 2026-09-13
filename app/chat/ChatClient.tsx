@@ -754,7 +754,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               </p>
             ) : null}
 
-            <form className="message-form" onSubmit={sendMessage}>
+            <form
+              className={`message-form${editingId ? " message-form-editing" : ""}`}
+              onSubmit={sendMessage}
+            >
               {replyId || editingId ? (
                 <div className="composer-context" role="status">
                   <div>
@@ -809,22 +812,16 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   disabled={!selectedUser || editPending || ghostCreating}
                 />
               </label>
-              <button
-                type="submit"
-                disabled={
-                  status !== "Connected" ||
-                  !selectedUser ||
-                  !text.trim() ||
-                  editPending ||
-                  ghostCreating
-                }
-              >
-                {editPending ? "Saving…" : editingId ? "Save" : "Send"}
-              </button>
               {!editingId ? (
                 <button
                   type="button"
                   className="ghost-create-button"
+                  aria-label={
+                    ghostCreating
+                      ? "Creating Ghost message"
+                      : "Create Ghost message — only you can see it"
+                  }
+                  title="Create Ghost message — only you can see it"
                   disabled={
                     status !== "Connected" ||
                     !selectedUser ||
@@ -833,9 +830,30 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   }
                   onClick={() => sendCurrentMessage(true)}
                 >
-                  {ghostCreating ? "Creating Ghost…" : "👻 Ghost"}
+                  <span aria-hidden="true">{ghostCreating ? "…" : "👻"}</span>
                 </button>
               ) : null}
+              <button
+                type="submit"
+                className="composer-send"
+                aria-label={editingId ? "Save message" : "Send message"}
+                title={editingId ? "Save message" : "Send message"}
+                disabled={
+                  status !== "Connected" ||
+                  !selectedUser ||
+                  !text.trim() ||
+                  editPending ||
+                  ghostCreating
+                }
+              >
+                {editPending ? (
+                  "…"
+                ) : editingId ? (
+                  "Save"
+                ) : (
+                  <span aria-hidden="true">➤</span>
+                )}
+              </button>
             </form>
           </section>
         </div>
