@@ -462,6 +462,7 @@ h1 {
   outline: none;
 }
 .sidebar-contact-list {
+  min-width: 0;
   min-height: 0;
   display: grid;
   align-content: start;
@@ -470,6 +471,7 @@ h1 {
 }
 .sidebar-contact {
   width: 100%;
+  min-width: 0;
   min-height: 48px;
   display: flex;
   align-items: center;
@@ -501,6 +503,7 @@ h1 {
   color: #4056c7;
 }
 .sidebar-contact-avatar {
+  position: relative;
   width: 34px;
   height: 34px;
   flex: 0 0 auto;
@@ -511,6 +514,64 @@ h1 {
   color: #465dcd;
   font-size: 0.78rem;
   font-weight: 850;
+}
+.presence-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #a3adbd;
+}
+.presence-dot-online {
+  background: #24a66b;
+}
+.sidebar-contact-avatar .presence-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #fff;
+}
+.sidebar-contact-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-unread-badge {
+  min-width: 23px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: #5268d9;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-align: center;
+}
+.chat-presence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 7px 0 0;
+  color: #7a8495;
+  font-size: 0.76rem;
+}
+.chat-typing {
+  min-height: 16px;
+  margin: -8px 2px;
+  color: #5268d9;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+.message-receipt {
+  display: block;
+  margin-top: 7px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.7rem;
+  text-align: right;
 }
 .sidebar-list-message {
   margin: 6px 8px;
@@ -546,6 +607,7 @@ h1 {
 }
 .chat-card {
   width: min(100%, 980px);
+  min-width: 0;
   height: calc(100vh - 48px);
   min-height: 560px;
   display: flex;
@@ -562,6 +624,7 @@ h1 {
 }
 .chat-title-block {
   min-width: 0;
+  flex: 1;
 }
 .chat-header h1 {
   font-size: clamp(1.55rem, 4vw, 2rem);

@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { ChatUser } from "../lib/chat-types";
+import type { ChatFriend, ChatUser } from "../lib/chat-types";
 import { LogoutButton } from "./LogoutButton";
 
 type ChatSidebarProps = {
   username: string;
   email: string;
-  friends: ChatUser[];
+  friends: ChatFriend[];
   selectedUserId: string | null;
   friendsLoading: boolean;
   onSelectUser: (user: ChatUser) => void;
   onManageFriends: () => void;
+  onDrawerChange: (isOpen: boolean) => void;
 };
 
 function ChatIcon() {
@@ -41,12 +42,17 @@ export function ChatSidebar({
   friendsLoading,
   onSelectUser,
   onManageFriends,
+  onDrawerChange,
 }: ChatSidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const initial = username.trim().charAt(0).toLocaleUpperCase() || "P";
+
+  useEffect(() => {
+    onDrawerChange(isOpen);
+  }, [isOpen, onDrawerChange]);
 
   useEffect(() => {
     setIsOpen(false);
@@ -195,6 +201,7 @@ export function ChatSidebar({
                     type="button"
                     key={user.id}
                     aria-pressed={isActive}
+                    aria-label={`${user.username}, ${user.online ? "online" : "offline"}${user.unreadCount > 0 ? `, ${user.unreadCount} unread messages` : ""}`}
                     onClick={() => {
                       onSelectUser(user);
                       closeDrawer();
@@ -202,8 +209,18 @@ export function ChatSidebar({
                   >
                     <span className="sidebar-contact-avatar" aria-hidden="true">
                       {userInitial}
+                      <span
+                        className={`presence-dot${user.online ? " presence-dot-online" : ""}`}
+                      />
                     </span>
-                    <span>{user.username}</span>
+                    <span className="sidebar-contact-name">
+                      {user.username}
+                    </span>
+                    {user.unreadCount > 0 ? (
+                      <span className="sidebar-unread-badge" aria-hidden="true">
+                        {user.unreadCount > 99 ? "99+" : user.unreadCount}
+                      </span>
+                    ) : null}
                   </button>
                 );
               })

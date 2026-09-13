@@ -10,12 +10,23 @@ import {
 } from "react";
 import { ChatSidebar } from "../../components/ChatSidebar";
 import { FriendManager } from "../../components/FriendManager";
-import type { ChatUser, PrivateMessage } from "../../lib/chat-types";
+import type {
+  ChatFriend,
+  ChatUser,
+  PrivateMessage,
+  ReadReceipt,
+} from "../../lib/chat-types";
+import {
+  applyReadReceipt,
+  isRecord,
+  mergeMessages,
+  parseChatFriend,
+  parsePrivateMessage,
+  parseServerMessage,
+} from "../../lib/chat-events";
+import { useChatTyping } from "../../lib/use-chat-typing";
 
 type ConnectionStatus = "Connecting" | "Connected" | "Disconnected";
-type ServerMessage =
-  | { type: "message.new"; message: PrivateMessage }
-  | { type: "error"; data: { message: string } };
 
 type ChatClientProps = {
   currentUser: {
@@ -27,78 +38,10 @@ type ChatClientProps = {
 
 const websocketUrl = process.env.NEXT_PUBLIC_WS_URL?.trim();
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null;
-
-const parseChatUser = (value: unknown): ChatUser | null => {
-  if (
-    !isRecord(value) ||
-    typeof value.id !== "string" ||
-    typeof value.username !== "string"
-  ) {
-    return null;
-  }
-  return { id: value.id, username: value.username };
-};
-
-const parsePrivateMessage = (value: unknown): PrivateMessage | null => {
-  if (
-    !isRecord(value) ||
-    typeof value.id !== "string" ||
-    typeof value.senderId !== "string" ||
-    typeof value.receiverId !== "string" ||
-    typeof value.messageText !== "string" ||
-    typeof value.createdAt !== "string"
-  ) {
-    return null;
-  }
-  return {
-    id: value.id,
-    senderId: value.senderId,
-    receiverId: value.receiverId,
-    messageText: value.messageText,
-    createdAt: value.createdAt,
-  };
-};
-
-const parseServerMessage = (raw: string): ServerMessage | null => {
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!isRecord(value)) return null;
-    if (value.type === "message.new") {
-      const message = parsePrivateMessage(value.message);
-      return message ? { type: "message.new", message } : null;
-    }
-    if (
-      value.type === "error" &&
-      isRecord(value.data) &&
-      typeof value.data.message === "string"
-    ) {
-      return { type: "error", data: { message: value.data.message } };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-};
-
-const mergeMessages = (
-  current: PrivateMessage[],
-  incoming: PrivateMessage[],
-) => {
-  const byId = new Map(current.map((message) => [message.id, message]));
-  for (const message of incoming) byId.set(message.id, message);
-  return [...byId.values()].sort(
-    (left, right) =>
-      left.createdAt.localeCompare(right.createdAt) ||
-      left.id.length - right.id.length ||
-      left.id.localeCompare(right.id),
-  );
-};
 
 export function ChatClient({ currentUser }: ChatClientProps) {
   const router = useRouter();
-  const [friends, setFriends] = useState<ChatUser[]>([]);
+  const [friends, setFriends] = useState<ChatFriend[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [text, setText] = useState("");
@@ -109,12 +52,79 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isFriendManagerOpen, setIsFriendManagerOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [presence, setPresence] = useState<
+    Record<string, { online: boolean; revision: number }>
+  >({});
+  const [unreadState, setUnreadState] = useState<{
+    synced: boolean;
+    counts: Record<string, number>;
+  }>({ synced: false, counts: {} });
+  const unreadRevisionRef = useRef(0);
+  const readRequestsRef = useRef(new Map<string, string>());
+  const readReceiptsRef = useRef(new Map<string, ReadReceipt>());
+  const messagesRef = useRef(messages);
+  const conversationObscuredRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
   const selectedUserIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const { typingByUser, updateTyping, stopTyping, handleTyping, clearTyping } =
+    useChatTyping(socketRef, currentUser.id);
+  messagesRef.current = messages;
+  conversationObscuredRef.current = isSidebarOpen || isFriendManagerOpen;
 
   const selectedUser =
     friends.find((friend) => friend.id === selectedUserId) ?? null;
+  const displayedFriends = friends.map((friend) => ({
+    ...friend,
+    online: presence[friend.id]?.online ?? friend.online,
+    unreadCount: unreadState.synced
+      ? (unreadState.counts[friend.id] ?? 0)
+      : friend.unreadCount,
+  }));
+  const selectedOnline = selectedUser
+    ? (presence[selectedUser.id]?.online ?? selectedUser.online)
+    : false;
+  const lastOwnMessageId = messages.findLast(
+    (message) => message.senderId === currentUser.id,
+  )?.id;
+
+  const applyKnownReceipts = useCallback((incoming: PrivateMessage[]) => {
+    let updated = incoming;
+    for (const receipt of readReceiptsRef.current.values())
+      updated = applyReadReceipt(updated, receipt);
+    return updated;
+  }, []);
+
+  const markVisibleMessagesRead = useCallback(() => {
+    const friendId = selectedUserIdRef.current;
+    const socket = socketRef.current;
+    if (
+      !friendId ||
+      conversationObscuredRef.current ||
+      document.visibilityState !== "visible" ||
+      !document.hasFocus() ||
+      socket?.readyState !== WebSocket.OPEN
+    )
+      return;
+    const latestIncoming = messagesRef.current.findLast(
+      (message) =>
+        message.senderId === friendId &&
+        message.receiverId === currentUser.id &&
+        !message.readAt,
+    );
+    if (!latestIncoming) return;
+    const previous = readRequestsRef.current.get(friendId);
+    if (previous && BigInt(previous) >= BigInt(latestIncoming.id)) return;
+    readRequestsRef.current.set(friendId, latestIncoming.id);
+    socket.send(
+      JSON.stringify({
+        type: "message.read",
+        friendId,
+        throughMessageId: latestIncoming.id,
+      }),
+    );
+  }, [currentUser.id]);
 
   const loadFriends = useCallback(
     async (signal?: AbortSignal) => {
@@ -140,11 +150,14 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         if (!isRecord(value) || !Array.isArray(value.friends)) {
           throw new Error("Invalid friends response");
         }
-        const parsedFriends = value.friends.map(parseChatUser);
+        const parsedFriends = value.friends.map(parseChatFriend);
         if (parsedFriends.some((friend) => friend === null)) {
           throw new Error("Invalid friend in response");
         }
-        setFriends(parsedFriends as ChatUser[]);
+        if (signal?.aborted) return;
+        setFriends(parsedFriends as ChatFriend[]);
+        if (socketRef.current?.readyState === WebSocket.OPEN)
+          socketRef.current.send(JSON.stringify({ type: "chat.sync" }));
       } catch (requestError) {
         if (requestError instanceof Error && requestError.name === "AbortError")
           return;
@@ -173,6 +186,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     const socket = new WebSocket(websocketUrl);
     socketRef.current = socket;
     socket.onopen = () => {
+      unreadRevisionRef.current = 0;
+      readRequestsRef.current.clear();
+      setPresence({});
+      setUnreadState({ synced: false, counts: {} });
       setStatus("Connected");
       setConnectionError(null);
     };
@@ -180,9 +197,90 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       const serverMessage = parseServerMessage(event.data);
       if (!serverMessage) return;
       if (serverMessage.type === "error") {
+        readRequestsRef.current.clear();
         setConnectionError(serverMessage.data.message);
         return;
       }
+
+      if (
+        serverMessage.type === "typing.start" ||
+        serverMessage.type === "typing.stop"
+      ) {
+        handleTyping(serverMessage);
+        return;
+      }
+      if (serverMessage.type === "message.read") {
+        if (
+          serverMessage.readerId !== currentUser.id &&
+          serverMessage.senderId !== currentUser.id
+        )
+          return;
+        const key = `${serverMessage.senderId}:${serverMessage.readerId}`;
+        const previous = readReceiptsRef.current.get(key);
+        if (
+          !previous ||
+          BigInt(previous.throughMessageId) <
+            BigInt(serverMessage.throughMessageId)
+        )
+          readReceiptsRef.current.set(key, serverMessage);
+        setMessages((current) => applyReadReceipt(current, serverMessage));
+        return;
+      }
+      if (serverMessage.type === "presence.update") {
+        setPresence((current) =>
+          (current[serverMessage.userId]?.revision ?? -1) <=
+          serverMessage.revision
+            ? {
+                ...current,
+                [serverMessage.userId]: {
+                  online: serverMessage.online,
+                  revision: serverMessage.revision,
+                },
+              }
+            : current,
+        );
+        return;
+      }
+      if (
+        serverMessage.type === "unread.update" ||
+        serverMessage.type === "chat.state"
+      ) {
+        const revision =
+          serverMessage.type === "unread.update"
+            ? serverMessage.revision
+            : serverMessage.unreadRevision;
+        if (revision >= unreadRevisionRef.current) {
+          unreadRevisionRef.current = revision;
+          const entries =
+            serverMessage.type === "unread.update"
+              ? serverMessage.counts.map((count) => [
+                  count.friendId,
+                  count.unreadCount,
+                ])
+              : serverMessage.friends.map((friend) => [
+                  friend.id,
+                  friend.unreadCount,
+                ]);
+          setUnreadState({ synced: true, counts: Object.fromEntries(entries) });
+        }
+        if (serverMessage.type === "chat.state") {
+          setPresence((current) => {
+            const updated = { ...current };
+            for (const friend of serverMessage.friends) {
+              if (
+                (updated[friend.id]?.revision ?? -1) <= friend.presenceRevision
+              )
+                updated[friend.id] = {
+                  online: friend.online,
+                  revision: friend.presenceRevision,
+                };
+            }
+            return updated;
+          });
+        }
+        return;
+      }
+      if (serverMessage.type !== "message.new") return;
 
       const activeUserId = selectedUserIdRef.current;
       const message = serverMessage.message;
@@ -194,17 +292,21 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             message.receiverId === currentUser.id));
 
       if (belongsToActiveConversation) {
-        setMessages((current) => mergeMessages(current, [message]));
+        setMessages((current) =>
+          mergeMessages(current, applyKnownReceipts([message])),
+        );
       }
     };
     socket.onerror = () => {
       setConnectionError("WebSocket connection failed.");
     };
     socket.onclose = () => {
+      clearTyping();
       setStatus("Disconnected");
       if (socketRef.current === socket) socketRef.current = null;
     };
     return () => {
+      clearTyping();
       socket.onopen = null;
       socket.onmessage = null;
       socket.onerror = null;
@@ -212,7 +314,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       socket.close();
       if (socketRef.current === socket) socketRef.current = null;
     };
-  }, [currentUser.id]);
+  }, [currentUser.id, applyKnownReceipts, handleTyping, clearTyping]);
 
   useEffect(() => {
     if (!selectedUserId) return;
@@ -245,8 +347,16 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         if (history.some((message) => message === null)) {
           throw new Error("Invalid message in history");
         }
+        if (
+          controller.signal.aborted ||
+          selectedUserIdRef.current !== selectedUserId
+        )
+          return;
         setMessages((current) =>
-          mergeMessages(current, history as PrivateMessage[]),
+          mergeMessages(
+            current,
+            applyKnownReceipts(history as PrivateMessage[]),
+          ),
         );
       } catch (requestError) {
         if (requestError instanceof Error && requestError.name === "AbortError")
@@ -260,13 +370,37 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     return () => {
       controller.abort();
     };
-  }, [router, selectedUserId]);
+  }, [router, selectedUserId, applyKnownReceipts]);
+
+  useEffect(() => {
+    markVisibleMessagesRead();
+    if (isSidebarOpen || isFriendManagerOpen) stopTyping();
+  }, [
+    messages,
+    selectedUserId,
+    status,
+    isSidebarOpen,
+    isFriendManagerOpen,
+    markVisibleMessagesRead,
+    stopTyping,
+  ]);
+
+  useEffect(() => {
+    window.addEventListener("focus", markVisibleMessagesRead);
+    document.addEventListener("visibilitychange", markVisibleMessagesRead);
+    return () => {
+      window.removeEventListener("focus", markVisibleMessagesRead);
+      document.removeEventListener("visibilitychange", markVisibleMessagesRead);
+    };
+  }, [markVisibleMessagesRead]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const selectUser = (user: ChatUser) => {
+    if (selectedUserIdRef.current === user.id) return;
+    stopTyping();
     selectedUserIdRef.current = user.id;
     setSelectedUserId(user.id);
     setMessages([]);
@@ -294,6 +428,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         message: trimmedText,
       }),
     );
+    stopTyping();
     setText("");
     setConnectionError(null);
   };
@@ -310,11 +445,12 @@ export function ChatClient({ currentUser }: ChatClientProps) {
         <ChatSidebar
           username={currentUser.username}
           email={currentUser.email}
-          friends={friends}
+          friends={displayedFriends}
           selectedUserId={selectedUserId}
           friendsLoading={friendsLoading}
           onSelectUser={selectUser}
           onManageFriends={() => setIsFriendManagerOpen(true)}
+          onDrawerChange={setIsSidebarOpen}
         />
         <FriendManager
           isOpen={isFriendManagerOpen}
@@ -329,6 +465,15 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                 <h1 id="chat-title">
                   {selectedUser?.username ?? "Private Chat"}
                 </h1>
+                {selectedUser ? (
+                  <p className="chat-presence">
+                    <span
+                      className={`presence-dot${selectedOnline ? " presence-dot-online" : ""}`}
+                      aria-hidden="true"
+                    />
+                    {selectedOnline ? "Online" : "Offline"}
+                  </p>
+                ) : null}
               </div>
               <div className={`status status-${status.toLowerCase()}`}>
                 <span aria-hidden="true" />
@@ -377,12 +522,23 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                         </time>
                       </div>
                       <p>{message.messageText}</p>
+                      {isOwnMessage && message.id === lastOwnMessageId ? (
+                        <span className="message-receipt">
+                          {message.readAt ? "Seen" : "Sent"}
+                        </span>
+                      ) : null}
                     </article>
                   );
                 })
               )}
               <div ref={messagesEndRef} />
             </div>
+
+            <p className="chat-typing" role="status">
+              {selectedUser && typingByUser[selectedUser.id]
+                ? `${selectedUser.username} is typing…`
+                : ""}
+            </p>
 
             {displayedError ? (
               <p className="error-message" role="alert">
@@ -400,7 +556,12 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                 <input
                   type="text"
                   value={text}
-                  onChange={(event) => setText(event.target.value)}
+                  onChange={(event) => {
+                    setText(event.target.value);
+                    if (selectedUser)
+                      updateTyping(selectedUser.id, event.target.value);
+                  }}
+                  onBlur={stopTyping}
                   placeholder={
                     selectedUser
                       ? "Type a private message…"
