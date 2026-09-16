@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { ChatFriend, ChatUser } from "../lib/chat-types";
+import type { ChatFriend, ChatGroup, ChatUser } from "../lib/chat-types";
 import { LogoutButton } from "./LogoutButton";
 import { BrandLogo } from "./BrandLogo";
 
@@ -15,6 +15,10 @@ type ChatSidebarProps = {
   friendsLoading: boolean;
   onSelectUser: (user: ChatUser) => void;
   onManageFriends: () => void;
+  groups: ChatGroup[];
+  selectedGroupId: string | null;
+  onSelectGroup: (group: ChatGroup) => void;
+  onCreateGroup: () => void;
   onDrawerChange: (isOpen: boolean) => void;
 };
 
@@ -43,6 +47,10 @@ export function ChatSidebar({
   friendsLoading,
   onSelectUser,
   onManageFriends,
+  groups,
+  selectedGroupId,
+  onSelectGroup,
+  onCreateGroup,
   onDrawerChange,
 }: ChatSidebarProps) {
   const pathname = usePathname();
@@ -226,6 +234,50 @@ export function ChatSidebar({
                 );
               })
             )}
+          </div>
+        </section>
+
+        <section className="sidebar-groups" aria-labelledby="groups-title">
+          <div className="sidebar-section-heading">
+            <h2 id="groups-title">Groups</h2>
+            <span>{groups.length}</span>
+          </div>
+          <button
+            className="sidebar-add-friend"
+            type="button"
+            onClick={() => {
+              onCreateGroup();
+              closeDrawer();
+            }}
+          >
+            <span aria-hidden="true">+</span>Create group
+          </button>
+          <div className="sidebar-contact-list">
+            {groups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                className={`sidebar-contact${selectedGroupId === group.id ? " sidebar-contact-active" : ""}`}
+                aria-pressed={selectedGroupId === group.id}
+                onClick={() => {
+                  onSelectGroup(group);
+                  closeDrawer();
+                }}
+              >
+                <span
+                  className="sidebar-contact-avatar group-avatar"
+                  aria-hidden="true"
+                >
+                  👥
+                </span>
+                <span className="sidebar-contact-name">{group.name}</span>
+                {group.unreadCount > 0 ? (
+                  <span className="sidebar-unread-badge">
+                    {group.unreadCount > 99 ? "99+" : group.unreadCount}
+                  </span>
+                ) : null}
+              </button>
+            ))}
           </div>
         </section>
 

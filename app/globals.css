@@ -508,11 +508,89 @@ h1 {
 .sidebar-contacts {
   min-height: 0;
   display: flex;
-  flex: 1;
+  flex: 0 1 42%;
   flex-direction: column;
   margin-top: 22px;
   padding-top: 20px;
   border-top: 1px solid #eceef4;
+}
+.sidebar-groups {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eceef4;
+}
+.group-avatar {
+  font-size: 0.85rem;
+}
+.group-info-button {
+  border: 0;
+  padding: 3px 0;
+  background: transparent;
+  color: #697386;
+  cursor: pointer;
+}
+.group-header-action {
+  cursor: pointer;
+}
+.group-dialog {
+  width: min(100%, 580px);
+}
+.group-member-picker {
+  display: grid;
+  max-height: 220px;
+  overflow: auto;
+  gap: 8px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #d8dee9;
+  border-radius: 12px;
+}
+.group-member-picker label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.group-info-list {
+  display: grid;
+  gap: 10px;
+}
+.group-info-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px;
+  border-radius: 10px;
+  background: #f5f8fa;
+}
+.group-info-list button {
+  border: 0;
+  background: transparent;
+  color: #bd3e36;
+  cursor: pointer;
+}
+.group-info-list select {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #d8dee9;
+  border-radius: 10px;
+  background: white;
+}
+.group-message-sender {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+.group-message-sender .sidebar-contact-avatar {
+  width: 25px;
+  height: 25px;
+  font-size: 0.68rem;
 }
 .sidebar-section-heading {
   display: flex;

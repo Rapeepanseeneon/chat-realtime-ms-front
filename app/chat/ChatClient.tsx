@@ -11,11 +11,15 @@ import {
 import { ChatSidebar } from "../../components/ChatSidebar";
 import { BrandLogo } from "../../components/BrandLogo";
 import { FriendManager } from "../../components/FriendManager";
+import { GroupManager } from "../../components/GroupManager";
+import { GroupMessageBubble } from "../../components/GroupMessageBubble";
 import { MessageBubble } from "../../components/MessageBubble";
 import type { GhostCommand } from "../../components/GhostMessage";
 import type {
   ChatFriend,
   ChatUser,
+  ChatGroup,
+  GroupMessage,
   PrivateMessage,
   ReadReceipt,
 } from "../../lib/chat-types";
@@ -56,6 +60,18 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const router = useRouter();
   const [friends, setFriends] = useState<ChatFriend[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [groups, setGroups] = useState<ChatGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [groupMessages, setGroupMessages] = useState<GroupMessage[]>([]);
+  const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+  const [groupInfoTarget, setGroupInfoTarget] = useState<ChatGroup | null>(
+    null,
+  );
+  const [groupReplyId, setGroupReplyId] = useState<string | null>(null);
+  const [groupEditingId, setGroupEditingId] = useState<string | null>(null);
+  const [groupTypingUsers, setGroupTypingUsers] = useState<
+    Record<string, string>
+  >({});
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [text, setText] = useState("");
   const [replyId, setReplyId] = useState<string | null>(null);
@@ -91,14 +107,21 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const conversationObscuredRef = useRef(false);
   const socketRef = useRef<WebSocket | null>(null);
   const selectedUserIdRef = useRef<string | null>(null);
+  const selectedGroupIdRef = useRef<string | null>(null);
+  const groupTypingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const { typingByUser, updateTyping, stopTyping, handleTyping, clearTyping } =
     useChatTyping(socketRef, currentUser.id);
   messagesRef.current = messages;
-  conversationObscuredRef.current = isSidebarOpen || isFriendManagerOpen;
+  conversationObscuredRef.current =
+    isSidebarOpen || isFriendManagerOpen || groupManagerOpen;
 
   const selectedUser =
     friends.find((friend) => friend.id === selectedUserId) ?? null;
+  const selectedGroup =
+    groups.find((group) => group.id === selectedGroupId) ?? null;
   const displayedFriends = friends.map((friend) => ({
     ...friend,
     online: presence[friend.id]?.online ?? friend.online,
@@ -202,14 +225,38 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     },
     [router],
   );
+  const loadGroups = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!apiBaseUrl) return;
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/groups`, {
+          credentials: "include",
+          signal,
+        });
+        if (response.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (!response.ok) throw Error();
+        const value = (await response.json()) as { groups: ChatGroup[] };
+        if (!Array.isArray(value.groups)) throw Error();
+        setGroups(value.groups);
+      } catch (error) {
+        if (!(error instanceof Error && error.name === "AbortError"))
+          setConnectionError("Groups could not be loaded.");
+      }
+    },
+    [router],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
     void loadFriends(controller.signal);
+    void loadGroups(controller.signal);
     return () => {
       controller.abort();
     };
-  }, [loadFriends]);
+  }, [loadFriends, loadGroups]);
 
   useEffect(() => {
     if (!websocketUrl) {
@@ -228,6 +275,85 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       setConnectionError(null);
     };
     socket.onmessage = (event: MessageEvent<string>) => {
+      const groupEvent = (() => {
+        try {
+          const value = JSON.parse(event.data) as {
+            type: string;
+            groupId?: string;
+            userId?: string;
+            username?: string;
+            message?: GroupMessage;
+          } | null;
+          return value &&
+            typeof value.type === "string" &&
+            value.type.startsWith("group.")
+            ? value
+            : null;
+        } catch {
+          return null;
+        }
+      })();
+      if (groupEvent) {
+        if (groupEvent.type === "group.updated") {
+          void loadGroups();
+          return;
+        }
+        if (
+          (groupEvent.type === "group.typing.start" ||
+            groupEvent.type === "group.typing.stop") &&
+          groupEvent.groupId &&
+          groupEvent.userId &&
+          groupEvent.username
+        ) {
+          if (groupEvent.groupId === selectedGroupIdRef.current)
+            setGroupTypingUsers((current) => {
+              const next = { ...current };
+              if (groupEvent!.type === "group.typing.start")
+                next[groupEvent!.userId!] = groupEvent!.username!;
+              else delete next[groupEvent!.userId!];
+              return next;
+            });
+          return;
+        }
+        if (
+          groupEvent.message &&
+          [
+            "group.message.new",
+            "group.message.edited",
+            "group.message.deleted",
+          ].includes(groupEvent.type)
+        ) {
+          const incoming = groupEvent.message;
+          if (incoming.groupId === selectedGroupIdRef.current)
+            setGroupMessages((current) => {
+              const found = current.some(
+                (message) => message.id === incoming.id,
+              );
+              return (
+                found
+                  ? current.map((message) =>
+                      message.id === incoming.id ? incoming : message,
+                    )
+                  : [...current, incoming]
+              ).sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+            });
+          if (
+            incoming.groupId === selectedGroupIdRef.current &&
+            document.visibilityState === "visible" &&
+            !conversationObscuredRef.current
+          )
+            socket.send(
+              JSON.stringify({ type: "group.read", groupId: incoming.groupId }),
+            );
+          if (incoming.senderId === currentUser.id) {
+            setText("");
+            setGroupReplyId(null);
+            setGroupEditingId(null);
+            setEditPending(false);
+          }
+          return;
+        }
+      }
       const serverMessage = parseServerMessage(event.data);
       if (!serverMessage) return;
       if (serverMessage.type === "error") {
@@ -404,6 +530,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       setConnectionError("WebSocket connection failed.");
     };
     socket.onclose = () => {
+      if (groupTypingTimerRef.current) {
+        clearTimeout(groupTypingTimerRef.current);
+        groupTypingTimerRef.current = null;
+      }
       ghostBusyRef.current = null;
       ghostCreatingRef.current = null;
       setGhostBusyId(null);
@@ -417,6 +547,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       if (socketRef.current === socket) socketRef.current = null;
     };
     return () => {
+      if (groupTypingTimerRef.current) {
+        clearTimeout(groupTypingTimerRef.current);
+        groupTypingTimerRef.current = null;
+      }
       clearTyping();
       socket.onopen = null;
       socket.onmessage = null;
@@ -425,7 +559,13 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       socket.close();
       if (socketRef.current === socket) socketRef.current = null;
     };
-  }, [currentUser.id, applyKnownReceipts, handleTyping, clearTyping]);
+  }, [
+    currentUser.id,
+    applyKnownReceipts,
+    handleTyping,
+    clearTyping,
+    loadGroups,
+  ]);
 
   useEffect(() => {
     if (!selectedUserId) return;
@@ -484,6 +624,47 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   }, [router, selectedUserId, applyKnownReceipts]);
 
   useEffect(() => {
+    if (!selectedGroupId) return;
+    const controller = new AbortController();
+    const load = async () => {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/api/groups/${selectedGroupId}/messages`,
+          { credentials: "include", signal: controller.signal },
+        );
+        if (!response.ok) throw Error();
+        const value = (await response.json()) as { messages: GroupMessage[] };
+        if (
+          !controller.signal.aborted &&
+          selectedGroupIdRef.current === selectedGroupId
+        ) {
+          setGroupMessages((current) => {
+            const byId = new Map(
+              value.messages.map((message) => [message.id, message]),
+            );
+            for (const message of current) byId.set(message.id, message);
+            return [...byId.values()].sort((a, b) =>
+              BigInt(a.id) < BigInt(b.id) ? -1 : 1,
+            );
+          });
+          socketRef.current?.send(
+            JSON.stringify({ type: "group.read", groupId: selectedGroupId }),
+          );
+        }
+      } catch (error) {
+        if (!(error instanceof Error && error.name === "AbortError"))
+          setHistoryError("Group history could not be loaded.");
+      } finally {
+        if (!controller.signal.aborted) setHistoryLoading(false);
+      }
+    };
+    void load();
+    return () => controller.abort();
+  }, [selectedGroupId]);
+
+  useEffect(() => {
     markVisibleMessagesRead();
     if (isSidebarOpen || isFriendManagerOpen) stopTyping();
   }, [
@@ -507,7 +688,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, groupMessages]);
 
   useEffect(() => {
     if (editingId && (!editingMessage || editingMessage.deletedAt)) {
@@ -521,7 +702,24 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const selectUser = (user: ChatUser) => {
     if (selectedUserIdRef.current === user.id) return;
     stopTyping();
+    if (
+      selectedGroupIdRef.current &&
+      socketRef.current?.readyState === WebSocket.OPEN
+    ) {
+      socketRef.current.send(
+        JSON.stringify({
+          type: "group.typing.stop",
+          groupId: selectedGroupIdRef.current,
+        }),
+      );
+    }
+    if (groupTypingTimerRef.current) {
+      clearTimeout(groupTypingTimerRef.current);
+      groupTypingTimerRef.current = null;
+    }
     selectedUserIdRef.current = user.id;
+    selectedGroupIdRef.current = null;
+    setSelectedGroupId(null);
     setSelectedUserId(user.id);
     setMessages([]);
     setText("");
@@ -531,10 +729,70 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setEditPending(false);
     setHistoryError(null);
   };
+  const selectGroup = (group: ChatGroup) => {
+    if (selectedGroupIdRef.current === group.id) return;
+    stopTyping();
+    if (
+      selectedGroupIdRef.current &&
+      socketRef.current?.readyState === WebSocket.OPEN
+    ) {
+      socketRef.current.send(
+        JSON.stringify({
+          type: "group.typing.stop",
+          groupId: selectedGroupIdRef.current,
+        }),
+      );
+    }
+    if (groupTypingTimerRef.current) {
+      clearTimeout(groupTypingTimerRef.current);
+      groupTypingTimerRef.current = null;
+    }
+    selectedUserIdRef.current = null;
+    setSelectedUserId(null);
+    selectedGroupIdRef.current = group.id;
+    setSelectedGroupId(group.id);
+    setGroupMessages([]);
+    setGroupTypingUsers({});
+    setText("");
+    setReplyId(null);
+    setEditingId(null);
+    setGroupReplyId(null);
+    setGroupEditingId(null);
+    setHistoryError(null);
+  };
 
   const sendCurrentMessage = (ghost = false) => {
     const socket = socketRef.current;
     const trimmedText = text.trim();
+    if (selectedGroup) {
+      if (ghost) {
+        setConnectionError(
+          "Ghost messages are available in private chats only.",
+        );
+        return;
+      }
+      if (!socket || socket.readyState !== WebSocket.OPEN || !trimmedText)
+        return;
+      socket.send(
+        JSON.stringify({
+          type: groupEditingId ? "group.message.edit" : "group.message.send",
+          groupId: selectedGroup.id,
+          messageId: groupEditingId,
+          message: trimmedText,
+          replyToMessageId: groupReplyId,
+        }),
+      );
+      setEditPending(Boolean(groupEditingId));
+      if (groupTypingTimerRef.current)
+        clearTimeout(groupTypingTimerRef.current);
+      socket.send(
+        JSON.stringify({
+          type: "group.typing.stop",
+          groupId: selectedGroup.id,
+        }),
+      );
+      return;
+    }
     if (!selectedUser) {
       setConnectionError("Select a user to start chatting.");
       return;
@@ -596,6 +854,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     if (editingId) setText("");
     setEditingId(null);
     setReplyId(null);
+    setGroupEditingId(null);
+    setGroupReplyId(null);
   };
   const startReply = (message: PrivateMessage) => {
     if (pendingEditRef.current) return;
@@ -648,6 +908,52 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setGhostBusyId(command.messageId);
     socket.send(JSON.stringify(command));
   };
+  const startGroupReply = (message: GroupMessage) => {
+    setGroupEditingId(null);
+    setGroupReplyId(message.id);
+    setText("");
+  };
+  const startGroupEdit = (message: GroupMessage) => {
+    if (message.senderId !== currentUser.id || message.deletedAt) return;
+    setGroupReplyId(null);
+    setGroupEditingId(message.id);
+    setText(message.messageText);
+  };
+  const deleteGroupMessage = (message: GroupMessage) => {
+    if (
+      message.senderId !== currentUser.id ||
+      message.deletedAt ||
+      !window.confirm("Delete this group message for everyone?")
+    )
+      return;
+    socketRef.current?.send(
+      JSON.stringify({ type: "group.message.delete", messageId: message.id }),
+    );
+  };
+  const updateGroupTyping = (value: string) => {
+    if (!selectedGroup || socketRef.current?.readyState !== WebSocket.OPEN)
+      return;
+    socketRef.current.send(
+      JSON.stringify({ type: "group.typing.start", groupId: selectedGroup.id }),
+    );
+    if (groupTypingTimerRef.current) clearTimeout(groupTypingTimerRef.current);
+    groupTypingTimerRef.current = setTimeout(
+      () =>
+        socketRef.current?.send(
+          JSON.stringify({
+            type: "group.typing.stop",
+            groupId: selectedGroup.id,
+          }),
+        ),
+      1200,
+    );
+  };
+  const groupReply = groupMessages.find(
+      (message) => message.id === groupReplyId,
+    ),
+    groupEditing = groupMessages.find(
+      (message) => message.id === groupEditingId,
+    );
 
   const displayedError = friendsError ?? historyError ?? connectionError;
 
@@ -659,15 +965,38 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           email={currentUser.email}
           friends={displayedFriends}
           selectedUserId={selectedUserId}
+          groups={groups}
+          selectedGroupId={selectedGroupId}
           friendsLoading={friendsLoading}
           onSelectUser={selectUser}
           onManageFriends={() => setIsFriendManagerOpen(true)}
+          onSelectGroup={selectGroup}
+          onCreateGroup={() => {
+            setGroupInfoTarget(null);
+            setGroupManagerOpen(true);
+          }}
           onDrawerChange={setIsSidebarOpen}
         />
         <FriendManager
           isOpen={isFriendManagerOpen}
           onClose={closeFriendManager}
           onFriendsChanged={() => void loadFriends()}
+        />
+        <GroupManager
+          isOpen={groupManagerOpen}
+          group={groupInfoTarget}
+          friends={displayedFriends}
+          onClose={() => setGroupManagerOpen(false)}
+          onChanged={(group, left) => {
+            void loadGroups();
+            if (group) selectGroup(group);
+            if (left && groupInfoTarget?.id === selectedGroupIdRef.current) {
+              selectedGroupIdRef.current = null;
+              setSelectedGroupId(null);
+              setGroupMessages([]);
+              setGroupTypingUsers({});
+            }
+          }}
         />
         <div className="chat-main">
           <section className="chat-card" aria-labelledby="chat-title">
@@ -677,9 +1006,32 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   <BrandLogo decorative />
                   <p className="eyebrow">Pb Messenger</p>
                 </div>
-                <h1 id="chat-title">
-                  {selectedUser?.username ?? "Private Chat"}
+                <h1
+                  id="chat-title"
+                  className={selectedGroup ? "group-header-action" : ""}
+                  onClick={() => {
+                    if (selectedGroup) {
+                      setGroupInfoTarget(selectedGroup);
+                      setGroupManagerOpen(true);
+                    }
+                  }}
+                >
+                  {selectedGroup?.name ??
+                    selectedUser?.username ??
+                    "Pb Messenger"}
                 </h1>
+                {selectedGroup ? (
+                  <button
+                    className="group-info-button"
+                    type="button"
+                    onClick={() => {
+                      setGroupInfoTarget(selectedGroup);
+                      setGroupManagerOpen(true);
+                    }}
+                  >
+                    👥 {selectedGroup.memberCount} members · Group info
+                  </button>
+                ) : null}
                 {selectedUser ? (
                   <p className="chat-presence">
                     <span
@@ -699,13 +1051,35 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             <div
               className="messages private-messages"
               aria-live="polite"
-              aria-label="Private messages"
+              aria-label={selectedGroup ? "Group messages" : "Private messages"}
             >
-              {!selectedUser ? (
+              {!selectedUser && !selectedGroup ? (
                 <div className="empty-state">
-                  <p>Select a friend to start chatting</p>
-                  <span>Choose an accepted friend from the sidebar.</span>
+                  <p>Select a chat to start messaging</p>
+                  <span>Choose a friend or group from the sidebar.</span>
                 </div>
+              ) : selectedGroup ? (
+                historyLoading && groupMessages.length === 0 ? (
+                  <div className="empty-state">
+                    <p>Loading group…</p>
+                  </div>
+                ) : groupMessages.length === 0 ? (
+                  <div className="empty-state">
+                    <p>No group messages yet</p>
+                  </div>
+                ) : (
+                  groupMessages.map((message) => (
+                    <GroupMessageBubble
+                      key={message.id}
+                      message={message}
+                      currentUserId={currentUser.id}
+                      disabled={status !== "Connected" || editPending}
+                      onReply={startGroupReply}
+                      onEdit={startGroupEdit}
+                      onDelete={deleteGroupMessage}
+                    />
+                  ))
+                )
               ) : historyLoading && messages.length === 0 ? (
                 <div className="empty-state">
                   <p>Loading conversation…</p>
@@ -714,7 +1088,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                 <div className="empty-state">
                   <p>No messages yet</p>
                   <span>
-                    Start a private conversation with {selectedUser.username}.
+                    Start a private conversation with {selectedUser!.username}.
                   </span>
                 </div>
               ) : (
@@ -723,7 +1097,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                     key={message.id}
                     message={message}
                     currentUserId={currentUser.id}
-                    friendName={selectedUser.username}
+                    friendName={selectedUser!.username}
                     showReceipt={message.id === lastOwnMessageId}
                     disabled={
                       status !== "Connected" ||
@@ -743,9 +1117,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             </div>
 
             <p className="chat-typing" role="status">
-              {selectedUser && typingByUser[selectedUser.id]
-                ? `${selectedUser.username} is typing…`
-                : ""}
+              {selectedGroup && Object.keys(groupTypingUsers).length
+                ? `${Object.values(groupTypingUsers).slice(0, 2).join(" and ")}${Object.keys(groupTypingUsers).length > 2 ? " and others" : ""} ${Object.keys(groupTypingUsers).length === 1 ? "is" : "are"} typing…`
+                : selectedUser && typingByUser[selectedUser.id]
+                  ? `${selectedUser.username} is typing…`
+                  : ""}
             </p>
 
             {displayedError ? (
@@ -755,26 +1131,32 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             ) : null}
 
             <form
-              className={`message-form${editingId ? " message-form-editing" : ""}`}
+              className={`message-form${editingId || groupEditingId ? " message-form-editing" : ""}`}
               onSubmit={sendMessage}
             >
-              {replyId || editingId ? (
+              {replyId || editingId || groupReplyId || groupEditingId ? (
                 <div className="composer-context" role="status">
                   <div>
                     <strong>
-                      {editingId
+                      {editingId || groupEditingId
                         ? "Editing message"
                         : "Replying to " +
                           (replyMessage?.senderId === currentUser.id
                             ? "yourself"
-                            : selectedUser?.username)}
+                            : selectedGroup
+                              ? groupReply?.senderUsername
+                              : selectedUser?.username)}
                     </strong>
                     <span>
-                      {editingId
-                        ? editingMessage?.messageText
+                      {editingId || groupEditingId
+                        ? (editingMessage?.messageText ??
+                          groupEditing?.messageText)
                         : replyMessage?.deletedAt
                           ? "This message was deleted"
-                          : replyMessage?.messageText}
+                          : (replyMessage?.messageText ??
+                            (groupReply?.deletedAt
+                              ? "This message was deleted"
+                              : groupReply?.messageText))}
                     </span>
                   </div>
                   <button
@@ -782,7 +1164,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                     className="composer-cancel"
                     disabled={editPending}
                     onClick={cancelComposerAction}
-                    aria-label={editingId ? "Cancel editing" : "Cancel reply"}
+                    aria-label={
+                      editingId || groupEditingId
+                        ? "Cancel editing"
+                        : "Cancel reply"
+                    }
                   >
                     ×
                   </button>
@@ -790,29 +1176,47 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               ) : null}
               <label className="field message-field">
                 <span>
-                  {selectedUser
-                    ? `Message ${selectedUser.username}`
-                    : "Select a friend to start chatting"}
+                  {selectedGroup
+                    ? `Message ${selectedGroup.name}`
+                    : selectedUser
+                      ? `Message ${selectedUser.username}`
+                      : "Select a friend to start chatting"}
                 </span>
                 <input
                   type="text"
                   value={text}
                   onChange={(event) => {
                     setText(event.target.value);
-                    if (selectedUser)
+                    if (selectedGroup) updateGroupTyping(event.target.value);
+                    else if (selectedUser)
                       updateTyping(selectedUser.id, event.target.value);
                   }}
-                  onBlur={stopTyping}
+                  onBlur={() => {
+                    if (selectedGroup)
+                      socketRef.current?.send(
+                        JSON.stringify({
+                          type: "group.typing.stop",
+                          groupId: selectedGroup.id,
+                        }),
+                      );
+                    else stopTyping();
+                  }}
                   placeholder={
-                    selectedUser
-                      ? "Type a private message…"
-                      : "Select a friend first"
+                    selectedGroup
+                      ? "Type a group message…"
+                      : selectedUser
+                        ? "Type a private message…"
+                        : "Select a friend first"
                   }
                   maxLength={1_000}
-                  disabled={!selectedUser || editPending || ghostCreating}
+                  disabled={
+                    (!selectedUser && !selectedGroup) ||
+                    editPending ||
+                    ghostCreating
+                  }
                 />
               </label>
-              {!editingId ? (
+              {!editingId && !groupEditingId ? (
                 <button
                   type="button"
                   className="ghost-create-button"
@@ -825,6 +1229,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   disabled={
                     status !== "Connected" ||
                     !selectedUser ||
+                    selectedGroup !== null ||
                     !text.trim() ||
                     ghostCreating
                   }
@@ -836,11 +1241,15 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               <button
                 type="submit"
                 className="composer-send"
-                aria-label={editingId ? "Save message" : "Send message"}
-                title={editingId ? "Save message" : "Send message"}
+                aria-label={
+                  editingId || groupEditingId ? "Save message" : "Send message"
+                }
+                title={
+                  editingId || groupEditingId ? "Save message" : "Send message"
+                }
                 disabled={
                   status !== "Connected" ||
-                  !selectedUser ||
+                  (!selectedUser && !selectedGroup) ||
                   !text.trim() ||
                   editPending ||
                   ghostCreating
@@ -848,7 +1257,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               >
                 {editPending ? (
                   "…"
-                ) : editingId ? (
+                ) : editingId || groupEditingId ? (
                   "Save"
                 ) : (
                   <span aria-hidden="true">➤</span>

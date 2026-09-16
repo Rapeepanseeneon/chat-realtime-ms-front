@@ -4,6 +4,40 @@ export type ChatUser = {
 };
 
 export type ChatFriend = ChatUser & { online: boolean; unreadCount: number };
+export type ChatGroup = {
+  id: string;
+  name: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  role: "owner" | "member";
+  memberCount: number;
+  unreadCount: number;
+};
+export type GroupMember = ChatUser & {
+  role: "owner" | "member";
+  joinedAt: string;
+};
+export type GroupInfo = ChatGroup & { members: GroupMember[] };
+export type GroupMessage = {
+  id: string;
+  groupId: string;
+  senderId: string;
+  senderUsername: string;
+  messageText: string;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  replyToMessageId: string | null;
+  reply: {
+    id: string;
+    senderId: string;
+    senderUsername: string;
+    messageText: string;
+    editedAt: string | null;
+    deletedAt: string | null;
+  } | null;
+};
 
 export type ReadReceipt = {
   type: "message.read";
