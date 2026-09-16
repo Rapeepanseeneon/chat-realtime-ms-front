@@ -1,9 +1,23 @@
 export type ChatUser = {
   id: string;
   username: string;
+  avatarUrl: string | null;
+  bio: string;
 };
 
-export type ChatFriend = ChatUser & { online: boolean; unreadCount: number };
+export type ChatFriend = ChatUser & {
+  online: boolean;
+  unreadCount: number;
+  favorite: boolean;
+  recentAt: string | null;
+};
+export type ProfileLink = {
+  id?: string;
+  platform: string;
+  label: string;
+  url: string;
+};
+export type PublicProfile = ChatUser & { links: ProfileLink[] };
 export type ChatGroup = {
   id: string;
   name: string;
@@ -24,6 +38,7 @@ export type GroupMessage = {
   groupId: string;
   senderId: string;
   senderUsername: string;
+  senderAvatarUrl: string | null;
   messageText: string;
   createdAt: string;
   editedAt: string | null;

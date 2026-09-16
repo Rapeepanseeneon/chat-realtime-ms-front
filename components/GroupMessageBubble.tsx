@@ -1,5 +1,6 @@
 "use client";
 import type { GroupMessage } from "../lib/chat-types";
+import { UserAvatar } from "./UserAvatar";
 type Props = {
   message: GroupMessage;
   currentUserId: string;
@@ -22,9 +23,11 @@ export function GroupMessageBubble({
       className={`message private-message ${own ? "private-message-own" : "private-message-other"}`}
     >
       <div className="group-message-sender">
-        <span className="sidebar-contact-avatar">
-          {message.senderUsername[0]?.toUpperCase()}
-        </span>
+        <UserAvatar
+          username={message.senderUsername}
+          avatarUrl={message.senderAvatarUrl}
+          className="sidebar-contact-avatar"
+        />
         <strong>{own ? "You" : message.senderUsername}</strong>
       </div>
       {message.reply ? (

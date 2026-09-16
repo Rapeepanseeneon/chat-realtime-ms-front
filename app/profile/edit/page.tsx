@@ -16,9 +16,14 @@ export default async function EditProfilePage() {
         <p className="eyebrow">Your account</p>
         <h1 id="profile-title">Edit Profile</h1>
         <p className="card-copy">
-          Keep your display name and email address up to date.
+          Manage how friends see you and your account preferences.
         </p>
-        <ProfileForm username={user.username} email={user.email} />
+        <ProfileForm
+          username={user.username}
+          email={user.email}
+          bio={user.bio}
+          avatarUrl={user.avatarUrl}
+        />
       </section>
     </main>
   );

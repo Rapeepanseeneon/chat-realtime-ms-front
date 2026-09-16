@@ -20,15 +20,23 @@ export const parseChatFriend = (value: unknown): ChatFriend | null => {
     !isRecord(value) ||
     !isId(value.id) ||
     typeof value.username !== "string" ||
+    (value.avatarUrl != null && typeof value.avatarUrl !== "string") ||
+    (value.bio != null && typeof value.bio !== "string") ||
     typeof value.online !== "boolean" ||
-    !isCount(value.unreadCount)
+    !isCount(value.unreadCount) ||
+    (value.favorite != null && typeof value.favorite !== "boolean") ||
+    (value.recentAt != null && typeof value.recentAt !== "string")
   )
     return null;
   return {
     id: value.id,
     username: value.username,
+    avatarUrl: typeof value.avatarUrl === "string" ? value.avatarUrl : null,
+    bio: typeof value.bio === "string" ? value.bio : "",
     online: value.online,
     unreadCount: value.unreadCount,
+    favorite: value.favorite === true,
+    recentAt: typeof value.recentAt === "string" ? value.recentAt : null,
   };
 };
 

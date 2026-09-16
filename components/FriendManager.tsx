@@ -45,6 +45,8 @@ const parseSearchResult = (value: unknown): FriendSearchResult | null => {
   return {
     id: value.id,
     username: value.username,
+    avatarUrl: typeof value.avatarUrl === "string" ? value.avatarUrl : null,
+    bio: typeof value.bio === "string" ? value.bio : "",
     relationship: value.relationship as FriendSearchResult["relationship"],
   };
 };
@@ -62,7 +64,15 @@ const parseFriendRequest = (value: unknown): FriendRequest | null => {
   }
   return {
     id: value.id,
-    sender: { id: value.sender.id, username: value.sender.username },
+    sender: {
+      id: value.sender.id,
+      username: value.sender.username,
+      avatarUrl:
+        typeof value.sender.avatarUrl === "string"
+          ? value.sender.avatarUrl
+          : null,
+      bio: typeof value.sender.bio === "string" ? value.sender.bio : "",
+    },
     createdAt: value.createdAt,
   };
 };

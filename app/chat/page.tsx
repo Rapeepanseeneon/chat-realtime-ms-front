@@ -7,7 +7,13 @@ export default async function ChatPage() {
   if (!user) redirect("/login");
   return (
     <ChatClient
-      currentUser={{ id: user.id, username: user.username, email: user.email }}
+      currentUser={{
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
+      }}
     />
   );
 }

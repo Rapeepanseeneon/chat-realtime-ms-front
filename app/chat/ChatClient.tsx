@@ -14,6 +14,8 @@ import { FriendManager } from "../../components/FriendManager";
 import { GroupManager } from "../../components/GroupManager";
 import { GroupMessageBubble } from "../../components/GroupMessageBubble";
 import { MessageBubble } from "../../components/MessageBubble";
+import { ProfileViewer } from "../../components/ProfileViewer";
+import { UserAvatar } from "../../components/UserAvatar";
 import type { GhostCommand } from "../../components/GhostMessage";
 import type {
   ChatFriend,
@@ -42,6 +44,8 @@ type ChatClientProps = {
     id: string;
     username: string;
     email: string;
+    bio: string;
+    avatarUrl: string | null;
   };
 };
 
@@ -92,6 +96,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isFriendManagerOpen, setIsFriendManagerOpen] = useState(false);
+  const [profileTarget, setProfileTarget] = useState<ChatUser | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [presence, setPresence] = useState<
     Record<string, { online: boolean; revision: number }>
@@ -112,11 +117,14 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     null,
   );
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messageAreaRef = useRef<HTMLDivElement | null>(null);
+  const nearBottomRef = useRef(true);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
   const { typingByUser, updateTyping, stopTyping, handleTyping, clearTyping } =
     useChatTyping(socketRef, currentUser.id);
   messagesRef.current = messages;
   conversationObscuredRef.current =
-    isSidebarOpen || isFriendManagerOpen || groupManagerOpen;
+    isSidebarOpen || isFriendManagerOpen || groupManagerOpen || !!profileTarget;
 
   const selectedUser =
     friends.find((friend) => friend.id === selectedUserId) ?? null;
@@ -686,9 +694,22 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     };
   }, [markVisibleMessagesRead]);
 
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
+    nearBottomRef.current = true;
+    setHasNewMessages(false);
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, groupMessages]);
+    nearBottomRef.current = true;
+    setHasNewMessages(false);
+    requestAnimationFrame(() => scrollToLatest("auto"));
+  }, [selectedUserId, selectedGroupId, historyLoading, scrollToLatest]);
+
+  useEffect(() => {
+    if (nearBottomRef.current) requestAnimationFrame(() => scrollToLatest());
+    else if (messages.length || groupMessages.length) setHasNewMessages(true);
+  }, [messages, groupMessages, scrollToLatest]);
 
   useEffect(() => {
     if (editingId && (!editingMessage || editingMessage.deletedAt)) {
@@ -848,6 +869,31 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setIsFriendManagerOpen(false);
   }, []);
 
+  const toggleFavorite = async (friend: ChatFriend) => {
+    if (!apiBaseUrl) return;
+    const favorite = !friend.favorite;
+    setFriends((current) =>
+      current
+        .map((item) => (item.id === friend.id ? { ...item, favorite } : item))
+        .sort((a, b) => Number(b.favorite) - Number(a.favorite)),
+    );
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/api/friends/${friend.id}/favorite`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ favorite }),
+        },
+      );
+      if (!response.ok) throw new Error();
+    } catch {
+      setConnectionError("Favorite preference could not be saved.");
+      void loadFriends();
+    }
+  };
+
   const cancelComposerAction = () => {
     if (pendingEditRef.current) return;
     stopTyping();
@@ -962,7 +1008,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       <div className="chat-layout">
         <ChatSidebar
           username={currentUser.username}
-          email={currentUser.email}
+          bio={currentUser.bio}
+          avatarUrl={currentUser.avatarUrl}
           friends={displayedFriends}
           selectedUserId={selectedUserId}
           groups={groups}
@@ -970,6 +1017,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           friendsLoading={friendsLoading}
           onSelectUser={selectUser}
           onManageFriends={() => setIsFriendManagerOpen(true)}
+          onViewProfile={setProfileTarget}
+          onToggleFavorite={(friend) => void toggleFavorite(friend)}
           onSelectGroup={selectGroup}
           onCreateGroup={() => {
             setGroupInfoTarget(null);
@@ -981,6 +1030,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           isOpen={isFriendManagerOpen}
           onClose={closeFriendManager}
           onFriendsChanged={() => void loadFriends()}
+        />
+        <ProfileViewer
+          user={profileTarget}
+          onClose={() => setProfileTarget(null)}
         />
         <GroupManager
           isOpen={groupManagerOpen}
@@ -1006,20 +1059,29 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   <BrandLogo decorative />
                   <p className="eyebrow">Pb Messenger</p>
                 </div>
-                <h1
-                  id="chat-title"
-                  className={selectedGroup ? "group-header-action" : ""}
-                  onClick={() => {
-                    if (selectedGroup) {
-                      setGroupInfoTarget(selectedGroup);
-                      setGroupManagerOpen(true);
-                    }
-                  }}
-                >
-                  {selectedGroup?.name ??
-                    selectedUser?.username ??
-                    "Pb Messenger"}
-                </h1>
+                <div className="chat-title-line">
+                  {selectedUser ? (
+                    <UserAvatar
+                      username={selectedUser.username}
+                      avatarUrl={selectedUser.avatarUrl}
+                      className="chat-header-avatar"
+                    />
+                  ) : null}
+                  <h1
+                    id="chat-title"
+                    className={selectedGroup ? "group-header-action" : ""}
+                    onClick={() => {
+                      if (selectedGroup) {
+                        setGroupInfoTarget(selectedGroup);
+                        setGroupManagerOpen(true);
+                      }
+                    }}
+                  >
+                    {selectedGroup?.name ??
+                      selectedUser?.username ??
+                      "Pb Messenger"}
+                  </h1>
+                </div>
                 {selectedGroup ? (
                   <button
                     className="group-info-button"
@@ -1033,13 +1095,21 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   </button>
                 ) : null}
                 {selectedUser ? (
-                  <p className="chat-presence">
-                    <span
-                      className={`presence-dot${selectedOnline ? " presence-dot-online" : ""}`}
-                      aria-hidden="true"
-                    />
-                    {selectedOnline ? "Online" : "Offline"}
-                  </p>
+                  <div className="chat-person-meta">
+                    <p className="chat-presence">
+                      <span
+                        className={`presence-dot${selectedOnline ? " presence-dot-online" : ""}`}
+                        aria-hidden="true"
+                      />
+                      {selectedOnline ? "Online" : "Offline"}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setProfileTarget(selectedUser)}
+                    >
+                      View profile
+                    </button>
+                  </div>
                 ) : null}
               </div>
               <div className={`status status-${status.toLowerCase()}`}>
@@ -1049,9 +1119,19 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             </header>
 
             <div
+              ref={messageAreaRef}
               className="messages private-messages"
               aria-live="polite"
               aria-label={selectedGroup ? "Group messages" : "Private messages"}
+              onScroll={(event) => {
+                const element = event.currentTarget;
+                nearBottomRef.current =
+                  element.scrollHeight -
+                    element.scrollTop -
+                    element.clientHeight <
+                  96;
+                if (nearBottomRef.current) setHasNewMessages(false);
+              }}
             >
               {!selectedUser && !selectedGroup ? (
                 <div className="empty-state">
@@ -1115,6 +1195,15 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               )}
               <div ref={messagesEndRef} />
             </div>
+            {hasNewMessages ? (
+              <button
+                className="new-message-button"
+                type="button"
+                onClick={() => scrollToLatest()}
+              >
+                New messages ↓
+              </button>
+            ) : null}
 
             <p className="chat-typing" role="status">
               {selectedGroup && Object.keys(groupTypingUsers).length

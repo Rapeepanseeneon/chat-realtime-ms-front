@@ -1,85 +1,296 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
+import type { ProfileLink } from "../lib/chat-types";
+import { ThemeControl } from "./ThemeControl";
+import { UserAvatar } from "./UserAvatar";
 
-type ProfileFormProps = { username: string; email: string };
+type ProfileFormProps = {
+  username: string;
+  email: string;
+  bio: string;
+  avatarUrl: string | null;
+};
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
-const SUCCESS_REDIRECT_DELAY_MS = 700;
+const emptyLink = (): ProfileLink => ({
+  platform: "Website",
+  label: "",
+  url: "",
+});
 
-export function ProfileForm({ username, email }: ProfileFormProps) {
+export function ProfileForm(initial: ProfileFormProps) {
   const router = useRouter();
+  const [avatarUrl, setAvatarUrl] = useState(initial.avatarUrl);
+  const [links, setLinks] = useState<ProfileLink[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [avatarPending, setAvatarPending] = useState(false);
 
   useEffect(() => {
-    return () => {
-      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    const controller = new AbortController();
+    const load = async () => {
+      if (!apiBaseUrl) return;
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/profile`, {
+          credentials: "include",
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const value = (await response.json()) as { links?: ProfileLink[] };
+          setLinks(Array.isArray(value.links) ? value.links : []);
+        }
+      } catch (loadError) {
+        if (!(loadError instanceof Error && loadError.name === "AbortError"))
+          setError("Profile links could not be loaded.");
+      }
     };
+    void load();
+    return () => controller.abort();
   }, []);
+
+  const readResponse = async (response: Response) => {
+    const value = (await response.json()) as {
+      error?: string;
+      message?: string;
+      user?: { avatarUrl?: string | null };
+    };
+    if (!response.ok)
+      throw new Error(value.error ?? "Profile could not be updated.");
+    return value;
+  };
+
+  const changeAvatar = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !apiBaseUrl || avatarPending) return;
+    setAvatarPending(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const body = new FormData();
+      body.set("avatar", file);
+      const value = await readResponse(
+        await fetch(`${apiBaseUrl}/api/profile/avatar`, {
+          method: "POST",
+          credentials: "include",
+          body,
+        }),
+      );
+      setAvatarUrl(value.user?.avatarUrl ?? null);
+      setSuccess(value.message ?? "Profile picture updated.");
+      router.refresh();
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error ? uploadError.message : "Upload failed.",
+      );
+    } finally {
+      setAvatarPending(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    if (!apiBaseUrl || avatarPending) return;
+    setAvatarPending(true);
+    setError(null);
+    try {
+      const value = await readResponse(
+        await fetch(`${apiBaseUrl}/api/profile/avatar`, {
+          method: "DELETE",
+          credentials: "include",
+        }),
+      );
+      setAvatarUrl(null);
+      setSuccess(value.message ?? "Profile picture removed.");
+      router.refresh();
+    } catch (removeError) {
+      setError(
+        removeError instanceof Error ? removeError.message : "Remove failed.",
+      );
+    } finally {
+      setAvatarPending(false);
+    }
+  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!apiBaseUrl || pending) return;
+    setPending(true);
     setError(null);
     setSuccess(null);
-    if (!apiBaseUrl) return setError("The API URL is not configured.");
     const form = new FormData(event.currentTarget);
-    setPending(true);
-    let updateSucceeded = false;
     try {
       const response = await fetch(`${apiBaseUrl}/api/profile`, {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.fromEntries(form.entries())),
+        body: JSON.stringify({
+          username: form.get("username"),
+          email: form.get("email"),
+          bio: form.get("bio"),
+          links: links.map(({ platform, label, url }) => ({
+            platform,
+            label,
+            url,
+          })),
+        }),
       });
-      const value: unknown = await response.json();
-      const isObject = value && typeof value === "object";
-      if (!response.ok) {
-        setError(
-          isObject && "error" in value && typeof value.error === "string"
-            ? value.error
-            : "Profile could not be updated.",
-        );
-        return;
-      }
-      updateSucceeded = true;
-      setSuccess("Profile updated successfully.");
-      redirectTimerRef.current = setTimeout(() => {
-        router.replace("/chat");
-      }, SUCCESS_REDIRECT_DELAY_MS);
-    } catch {
-      setError("Could not reach the server. Please try again.");
-    } finally {
-      if (!updateSucceeded) setPending(false);
+      const value = await readResponse(response);
+      setSuccess(value.message ?? "Profile updated successfully.");
+      router.refresh();
+      setTimeout(() => router.replace("/chat"), 650);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Save failed.");
+      setPending(false);
     }
   };
 
+  const updateLink = (index: number, patch: Partial<ProfileLink>) =>
+    setLinks((current) =>
+      current.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, ...patch } : item,
+      ),
+    );
   return (
-    <form className="auth-form" onSubmit={submit}>
+    <form className="auth-form profile-form" onSubmit={submit}>
+      <section className="avatar-editor" aria-label="Profile picture">
+        <UserAvatar
+          username={initial.username}
+          avatarUrl={avatarUrl}
+          className="profile-avatar"
+        />
+        <div>
+          <strong>Profile picture</strong>
+          <p>JPG, PNG or WebP · maximum 5 MB</p>
+          <div className="avatar-actions">
+            <label className="button button-ghost">
+              {avatarPending ? "Working…" : avatarUrl ? "Change" : "Upload"}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={avatarPending}
+                onChange={changeAvatar}
+              />
+            </label>
+            {avatarUrl ? (
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={avatarPending}
+                onClick={() => void removeAvatar()}
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </section>
       <label className="field">
         <span>Username</span>
         <input
           name="username"
-          defaultValue={username}
+          defaultValue={initial.username}
           required
           maxLength={50}
           autoComplete="username"
         />
       </label>
       <label className="field">
-        <span>Email</span>
+        <span>
+          Email <small>Private · used for login</small>
+        </span>
         <input
           name="email"
           type="email"
-          defaultValue={email}
+          defaultValue={initial.email}
           required
           maxLength={254}
           autoComplete="email"
         />
       </label>
+      <label className="field">
+        <span>Info / Bio</span>
+        <textarea
+          name="bio"
+          defaultValue={initial.bio}
+          maxLength={150}
+          rows={3}
+          placeholder="Tell friends a little about yourself…"
+        />
+      </label>
+      <section className="profile-links-editor">
+        <div className="profile-section-title">
+          <strong>Contact & social links</strong>
+          <button
+            type="button"
+            disabled={links.length >= 8}
+            onClick={() => setLinks((current) => [...current, emptyLink()])}
+          >
+            + Add link
+          </button>
+        </div>
+        {links.length === 0 ? (
+          <p className="profile-empty">No public links added.</p>
+        ) : (
+          links.map((link, index) => (
+            <div className="profile-link-row" key={link.id ?? index}>
+              <select
+                aria-label={`Platform ${index + 1}`}
+                value={link.platform}
+                onChange={(event) =>
+                  updateLink(index, { platform: event.target.value })
+                }
+              >
+                {[
+                  "Website",
+                  "Instagram",
+                  "Facebook",
+                  "TikTok",
+                  "X",
+                  "GitHub",
+                  "Other",
+                ].map((platform) => (
+                  <option key={platform}>{platform}</option>
+                ))}
+              </select>
+              <input
+                aria-label={`Link label ${index + 1}`}
+                value={link.label}
+                maxLength={60}
+                placeholder="Label"
+                required
+                onChange={(event) =>
+                  updateLink(index, { label: event.target.value })
+                }
+              />
+              <input
+                aria-label={`Link URL ${index + 1}`}
+                type="url"
+                value={link.url}
+                maxLength={2048}
+                placeholder="https://…"
+                required
+                onChange={(event) =>
+                  updateLink(index, { url: event.target.value })
+                }
+              />
+              <button
+                type="button"
+                aria-label={`Delete link ${index + 1}`}
+                onClick={() =>
+                  setLinks((current) =>
+                    current.filter((_, itemIndex) => itemIndex !== index),
+                  )
+                }
+              >
+                ×
+              </button>
+            </div>
+          ))
+        )}
+      </section>
+      <ThemeControl />
       {error ? (
         <p className="form-message form-error" role="alert">
           {error}
@@ -94,7 +305,7 @@ export function ProfileForm({ username, email }: ProfileFormProps) {
         <button
           className="button button-primary"
           type="submit"
-          disabled={pending}
+          disabled={pending || avatarPending}
         >
           {pending ? "Saving…" : "Save changes"}
         </button>
@@ -102,7 +313,7 @@ export function ProfileForm({ username, email }: ProfileFormProps) {
           className="button button-ghost"
           type="button"
           disabled={pending}
-          onClick={() => router.push("/")}
+          onClick={() => router.push("/chat")}
         >
           Cancel
         </button>

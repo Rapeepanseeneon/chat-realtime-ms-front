@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, type FormEvent } from "react";
 import type { ChatFriend, ChatGroup, GroupInfo } from "../lib/chat-types";
+import { UserAvatar } from "./UserAvatar";
 const api = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
 type Props = {
   isOpen: boolean;
@@ -157,6 +158,11 @@ export function GroupManager({
               {info.members.map((member) => (
                 <div key={member.id}>
                   <span>
+                    <UserAvatar
+                      username={member.username}
+                      avatarUrl={member.avatarUrl}
+                      className="sidebar-contact-avatar"
+                    />
                     {member.username}
                     {member.role === "owner" ? " · Owner" : ""}
                   </span>
