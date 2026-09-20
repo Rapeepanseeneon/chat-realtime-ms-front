@@ -119,6 +119,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messageAreaRef = useRef<HTMLDivElement | null>(null);
   const nearBottomRef = useRef(true);
+  const jumpToLatestRef = useRef(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const { typingByUser, updateTyping, stopTyping, handleTyping, clearTyping } =
     useChatTyping(socketRef, currentUser.id);
@@ -702,12 +703,23 @@ export function ChatClient({ currentUser }: ChatClientProps) {
 
   useEffect(() => {
     nearBottomRef.current = true;
+    jumpToLatestRef.current = true;
     setHasNewMessages(false);
-    requestAnimationFrame(() => scrollToLatest("auto"));
-  }, [selectedUserId, selectedGroupId, historyLoading, scrollToLatest]);
+  }, [selectedUserId, selectedGroupId]);
 
   useEffect(() => {
-    if (nearBottomRef.current) requestAnimationFrame(() => scrollToLatest());
+    const area = messageAreaRef.current;
+    if (jumpToLatestRef.current) {
+      if (messages.length === 0 && groupMessages.length === 0) return;
+      jumpToLatestRef.current = false;
+      requestAnimationFrame(() => scrollToLatest("auto"));
+      return;
+    }
+    const isNearBottom = area
+      ? area.scrollHeight - area.scrollTop - area.clientHeight < 96
+      : true;
+    nearBottomRef.current = isNearBottom;
+    if (isNearBottom) requestAnimationFrame(() => scrollToLatest());
     else if (messages.length || groupMessages.length) setHasNewMessages(true);
   }, [messages, groupMessages, scrollToLatest]);
 

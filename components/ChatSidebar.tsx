@@ -84,11 +84,11 @@ export function ChatSidebar(props: Props) {
       <button
         className="sidebar-contact-main"
         type="button"
-          onClick={() => {
-            props.onSelectUser(friend);
-            if (full) setViewAll(null);
-            close();
-          }}
+        onClick={() => {
+          props.onSelectUser(friend);
+          if (full) setViewAll(null);
+          close();
+        }}
       >
         <span className="sidebar-avatar-wrap">
           <UserAvatar

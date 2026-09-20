@@ -370,7 +370,7 @@ h1 {
   height: 100vh;
   height: 100dvh;
   display: grid;
-  grid-template-columns: 292px minmax(0, 1fr);
+  grid-template-columns: 392px minmax(0, 1fr);
   overflow: hidden;
 }
 .chat-sidebar {
@@ -1242,6 +1242,12 @@ h1 {
 .friend-dialog button:focus-visible {
   outline: 3px solid rgba(82, 104, 217, 0.24);
   outline-offset: 2px;
+}
+
+@media (max-width: 1100px) and (min-width: 761px) {
+  .chat-layout {
+    grid-template-columns: clamp(320px, 34vw, 360px) minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 760px) {
