@@ -2816,6 +2816,197 @@ h1,
   background-clip: padding-box;
 }
 
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.voice-call-button {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 28%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-accent) 10%, var(--surface));
+  color: var(--brand-accent);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.voice-call-button:hover,
+.voice-call-button:focus-visible {
+  background: color-mix(in srgb, var(--brand-accent) 17%, var(--surface));
+  border-color: var(--brand-accent);
+}
+.voice-call-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.voice-call-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(12, 22, 42, 0.58);
+  backdrop-filter: blur(12px);
+}
+.voice-call-panel {
+  position: relative;
+  width: min(100%, 390px);
+  min-height: 430px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 42px 28px 30px;
+  border: 1px solid color-mix(in srgb, var(--brand-accent) 22%, var(--border));
+  border-radius: 30px;
+  background:
+    radial-gradient(
+      circle at 50% 10%,
+      color-mix(in srgb, var(--brand-accent) 18%, transparent),
+      transparent 46%
+    ),
+    var(--surface);
+  color: var(--text);
+  text-align: center;
+  box-shadow: 0 28px 80px rgba(4, 18, 45, 0.3);
+}
+.voice-call-pulse {
+  position: absolute;
+  top: 50px;
+  width: 126px;
+  height: 126px;
+  border: 2px solid color-mix(in srgb, var(--brand-accent) 35%, transparent);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.voice-call-calling .voice-call-pulse,
+.voice-call-incoming .voice-call-pulse,
+.voice-call-connecting .voice-call-pulse {
+  animation: voice-call-ring 1.8s ease-out infinite;
+}
+@keyframes voice-call-ring {
+  0% {
+    transform: scale(0.78);
+    opacity: 0.62;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+.voice-call-avatar {
+  position: relative;
+  z-index: 1;
+  width: 108px;
+  height: 108px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 4px solid var(--surface);
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--brand-accent);
+  font-size: 2rem;
+  font-weight: 850;
+  box-shadow: 0 12px 30px var(--shadow);
+}
+.voice-call-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.voice-call-panel h2 {
+  max-width: 100%;
+  margin: 18px 0 4px;
+  overflow: hidden;
+  font-size: 1.55rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-call-duration {
+  margin-top: 5px;
+  color: var(--text);
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.voice-call-status {
+  min-height: 24px;
+  margin: 7px 0 26px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.voice-call-connected .voice-call-status {
+  color: #168342;
+}
+.voice-call-failed .voice-call-status,
+.voice-call-rejected .voice-call-status {
+  color: var(--danger);
+}
+.voice-call-actions {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.voice-call-action {
+  min-width: 78px;
+  min-height: 66px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.voice-call-action > span {
+  font-size: 1.25rem;
+}
+.voice-call-action:hover,
+.voice-call-action:focus-visible,
+.voice-call-action.call-control-active {
+  border-color: var(--brand-accent);
+  background: color-mix(in srgb, var(--brand-accent) 11%, var(--surface));
+}
+.voice-call-action.call-accept {
+  border-color: #20a861;
+  background: #20a861;
+  color: white;
+}
+.voice-call-action.call-reject,
+.voice-call-action.call-end {
+  border-color: #dc4450;
+  background: #dc4450;
+  color: white;
+}
+.voice-call-action.call-dismiss {
+  min-width: 130px;
+  min-height: 48px;
+  flex-direction: row;
+  background: var(--brand-primary);
+  color: white;
+}
+
 @media (max-width: 560px) {
   .private-message {
     min-width: 0;
@@ -2860,5 +3051,35 @@ h1,
   }
   .attachment-lightbox {
     padding: 12px;
+  }
+  .chat-header-actions {
+    gap: 6px;
+  }
+  .voice-call-button {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+    font-size: 0;
+  }
+  .voice-call-button span {
+    font-size: 1rem;
+  }
+  .voice-call-overlay {
+    align-items: stretch;
+    padding: 12px;
+  }
+  .voice-call-panel {
+    width: 100%;
+    min-height: 100%;
+    padding: 34px 18px 24px;
+    border-radius: 24px;
+  }
+  .voice-call-actions {
+    gap: 9px;
+  }
+  .voice-call-action {
+    min-width: 72px;
+    min-height: 64px;
+    padding-inline: 8px;
   }
 }

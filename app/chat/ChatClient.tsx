@@ -19,6 +19,7 @@ import { MessageBubble } from "../../components/MessageBubble";
 import { MobileBottomNav } from "../../components/MobileBottomNav";
 import { ProfileViewer } from "../../components/ProfileViewer";
 import { UserAvatar } from "../../components/UserAvatar";
+import { VoiceCallOverlay } from "../../components/VoiceCallOverlay";
 import type { GhostCommand } from "../../components/GhostMessage";
 import type {
   ChatFriend,
@@ -40,6 +41,7 @@ import {
   parseServerMessage,
 } from "../../lib/chat-events";
 import { useChatTyping } from "../../lib/use-chat-typing";
+import { useVoiceCall } from "../../lib/use-voice-call";
 
 type ConnectionStatus = "Connecting" | "Connected" | "Disconnected";
 type PendingAttachment =
@@ -159,6 +161,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const { typingByUser, updateTyping, stopTyping, handleTyping, clearTyping } =
     useChatTyping(socketRef, currentUser.id, settings.showTypingIndicator);
+  const voiceCall = useVoiceCall(socketRef, currentUser.id);
+  const voiceSignalHandlerRef = useRef(voiceCall.handleSignal);
+  const voiceDisconnectHandlerRef = useRef(voiceCall.handleSignalingDisconnect);
+  voiceSignalHandlerRef.current = voiceCall.handleSignal;
+  voiceDisconnectHandlerRef.current = voiceCall.handleSignalingDisconnect;
   messagesRef.current = messages;
   conversationObscuredRef.current =
     isFriendManagerOpen || groupManagerOpen || !!profileTarget;
@@ -361,6 +368,19 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       setConnectionError(null);
     };
     socket.onmessage = (event: MessageEvent<string>) => {
+      try {
+        const value: unknown = JSON.parse(event.data);
+        if (
+          isRecord(value) &&
+          typeof value.type === "string" &&
+          value.type.startsWith("call.")
+        ) {
+          void voiceSignalHandlerRef.current(value);
+          return;
+        }
+      } catch {
+        // Existing message validation below handles malformed payloads.
+      }
       const groupEvent = (() => {
         try {
           const value = JSON.parse(event.data) as {
@@ -643,6 +663,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       setEditPending(false);
       setDeletingId(null);
       clearTyping();
+      voiceDisconnectHandlerRef.current();
       setStatus("Disconnected");
       if (socketRef.current === socket) socketRef.current = null;
     };
@@ -1395,6 +1416,15 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             }
           }}
         />
+        <VoiceCallOverlay
+          call={voiceCall.view}
+          onAccept={() => void voiceCall.acceptCall()}
+          onReject={voiceCall.rejectCall}
+          onEnd={voiceCall.endCall}
+          onMute={voiceCall.toggleMute}
+          onSpeaker={voiceCall.toggleSpeaker}
+          onDismiss={voiceCall.dismissCall}
+        />
         <div className="chat-main">
           <section className="chat-card" aria-labelledby="chat-title">
             <header className="chat-header">
@@ -1474,9 +1504,28 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   </div>
                 ) : null}
               </div>
-              <div className={`status status-${status.toLowerCase()}`}>
-                <span aria-hidden="true" />
-                {status}
+              <div className="chat-header-actions">
+                {selectedUser ? (
+                  <button
+                    className="voice-call-button"
+                    type="button"
+                    onClick={() =>
+                      void voiceCall.startCall(
+                        selectedUser,
+                        selectedStatus !== "offline",
+                      )
+                    }
+                    disabled={status !== "Connected" || voiceCall.active}
+                    aria-label={`Voice call ${selectedUser.username}`}
+                  >
+                    <span aria-hidden="true">📞</span>
+                    Voice Call
+                  </button>
+                ) : null}
+                <div className={`status status-${status.toLowerCase()}`}>
+                  <span aria-hidden="true" />
+                  {status}
+                </div>
               </div>
             </header>
 
