@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ChatFriend, ChatGroup, ChatUser } from "../lib/chat-types";
 import { BrandLogo } from "./BrandLogo";
 import { LogoutButton } from "./LogoutButton";
-import { ThemeControl } from "./ThemeControl";
 import { UserAvatar } from "./UserAvatar";
 
 type Props = {
@@ -24,16 +23,12 @@ type Props = {
   selectedGroupId: string | null;
   onSelectGroup: (group: ChatGroup) => void;
   onCreateGroup: () => void;
-  onDrawerChange: (open: boolean) => void;
 };
 
 export function ChatSidebar(props: Props) {
   const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [viewAll, setViewAll] = useState<"friends" | "groups" | null>(null);
-  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const normalized = query.trim().toLocaleLowerCase();
   const filteredFriends = useMemo(
     () =>
@@ -55,27 +50,6 @@ export function ChatSidebar(props: Props) {
   );
   const quickGroups = (normalized ? filteredGroups : props.groups).slice(0, 4);
 
-  useEffect(() => props.onDrawerChange(isOpen), [isOpen, props.onDrawerChange]);
-  useEffect(() => setIsOpen(false), [pathname]);
-  useEffect(() => {
-    if (!isOpen) return;
-    const previous = document.body.style.overflow;
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsOpen(false);
-        menuButtonRef.current?.focus();
-      }
-    };
-    document.body.style.overflow = "hidden";
-    document.addEventListener("keydown", keydown);
-    closeButtonRef.current?.focus();
-    return () => {
-      document.body.style.overflow = previous;
-      document.removeEventListener("keydown", keydown);
-    };
-  }, [isOpen]);
-  const close = () => setIsOpen(false);
-
   const friendRow = (friend: ChatFriend, full = false) => (
     <div
       className={`sidebar-contact-row${props.selectedUserId === friend.id ? " sidebar-contact-active" : ""}`}
@@ -87,7 +61,6 @@ export function ChatSidebar(props: Props) {
         onClick={() => {
           props.onSelectUser(friend);
           if (full) setViewAll(null);
-          close();
         }}
       >
         <span className="sidebar-avatar-wrap">
@@ -96,11 +69,18 @@ export function ChatSidebar(props: Props) {
             avatarUrl={friend.avatarUrl}
             className="sidebar-contact-avatar"
           />
-          <span
-            className={`presence-dot${friend.online ? " presence-dot-online" : ""}`}
-          />
+          <span className={`presence-dot presence-dot-${friend.status}`} />
         </span>
-        <span className="sidebar-contact-name">{friend.username}</span>
+        <span className="sidebar-contact-copy">
+          <span className="sidebar-contact-name">{friend.username}</span>
+          <small>
+            {friend.customStatus ||
+              (friend.status === "dnd"
+                ? "Do Not Disturb"
+                : friend.status.charAt(0).toUpperCase() +
+                  friend.status.slice(1))}
+          </small>
+        </span>
         {friend.unreadCount > 0 ? (
           <span className="sidebar-unread-badge">
             {friend.unreadCount > 99 ? "99+" : friend.unreadCount}
@@ -130,29 +110,9 @@ export function ChatSidebar(props: Props) {
 
   return (
     <>
-      <button
-        ref={menuButtonRef}
-        className="sidebar-menu-button"
-        type="button"
-        aria-label="Open navigation menu"
-        aria-expanded={isOpen}
-        onClick={() => setIsOpen(true)}
-      >
-        <span />
-        <span />
-        <span />
-      </button>
-      {isOpen ? (
-        <button
-          className="sidebar-overlay"
-          type="button"
-          aria-label="Close navigation menu"
-          onClick={close}
-        />
-      ) : null}
       <aside
         id="chat-sidebar"
-        className={`chat-sidebar${isOpen ? " chat-sidebar-open" : ""}`}
+        className="chat-sidebar"
         aria-label="Chat navigation"
       >
         <div className="sidebar-brand-row">
@@ -160,15 +120,6 @@ export function ChatSidebar(props: Props) {
             <BrandLogo decorative />
             <span>Pb Messenger</span>
           </Link>
-          <button
-            ref={closeButtonRef}
-            className="sidebar-close-button"
-            type="button"
-            aria-label="Close navigation menu"
-            onClick={close}
-          >
-            ×
-          </button>
         </div>
         <div className="sidebar-user">
           <UserAvatar
@@ -194,6 +145,12 @@ export function ChatSidebar(props: Props) {
             href="/chat"
           >
             💬 <span>Chat</span>
+          </Link>
+          <Link
+            className={`sidebar-nav-link${pathname === "/settings" ? " sidebar-nav-link-active" : ""}`}
+            href="/settings"
+          >
+            ⚙ <span>Settings</span>
           </Link>
         </nav>
         <label className="sidebar-search">
@@ -233,7 +190,6 @@ export function ChatSidebar(props: Props) {
               type="button"
               onClick={() => {
                 props.onManageFriends();
-                close();
               }}
             >
               + Find friends & requests
@@ -255,7 +211,6 @@ export function ChatSidebar(props: Props) {
                     className={`sidebar-contact${props.selectedGroupId === group.id ? " sidebar-contact-active" : ""}`}
                     onClick={() => {
                       props.onSelectGroup(group);
-                      close();
                     }}
                   >
                     <span className="sidebar-contact-avatar group-avatar">
@@ -280,7 +235,6 @@ export function ChatSidebar(props: Props) {
               type="button"
               onClick={() => {
                 props.onCreateGroup();
-                close();
               }}
             >
               + Create group
@@ -288,7 +242,6 @@ export function ChatSidebar(props: Props) {
           </section>
         </div>
         <div className="sidebar-footer">
-          <ThemeControl compact />
           <LogoutButton className="sidebar-logout-button" />
         </div>
       </aside>
@@ -340,7 +293,6 @@ export function ChatSidebar(props: Props) {
                       onClick={() => {
                         props.onSelectGroup(group);
                         setViewAll(null);
-                        close();
                       }}
                     >
                       <span className="sidebar-contact-avatar group-avatar">

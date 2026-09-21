@@ -7,9 +7,22 @@ export type ChatUser = {
 
 export type ChatFriend = ChatUser & {
   online: boolean;
+  status: "online" | "away" | "dnd" | "offline";
+  customStatus: string;
   unreadCount: number;
   favorite: boolean;
   recentAt: string | null;
+};
+export type UserSettings = {
+  presenceStatus: "online" | "away" | "dnd" | "invisible";
+  customStatus: string;
+  showOnlineStatus: boolean;
+  sendReadReceipts: boolean;
+  showTypingIndicator: boolean;
+  confirmGhostRelease: boolean;
+  enterToSend: boolean;
+  messageTextSize: "small" | "default" | "large";
+  updatedAt: string;
 };
 export type ProfileLink = {
   id?: string;
@@ -81,6 +94,8 @@ export type ServerMessage =
       type: "presence.update";
       userId: string;
       online: boolean;
+      status: ChatFriend["status"];
+      customStatus: string;
       revision: number;
     }
   | {
@@ -93,11 +108,14 @@ export type ServerMessage =
       friends: {
         id: string;
         online: boolean;
+        status: ChatFriend["status"];
+        customStatus: string;
         presenceRevision: number;
         unreadCount: number;
       }[];
       unreadRevision: number;
     }
+  | { type: "settings.updated"; settings: UserSettings }
   | { type: "error"; data: { message: string } };
 
 export type FriendSearchResult = ChatUser & {

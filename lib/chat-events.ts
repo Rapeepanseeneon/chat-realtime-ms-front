@@ -3,6 +3,7 @@ import type {
   PrivateMessage,
   ReadReceipt,
   ServerMessage,
+  UserSettings,
 } from "./chat-types";
 
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -14,6 +15,24 @@ const isCount = (value: unknown): value is number =>
 const isNullableDate = (value: unknown) =>
   value == null ||
   (typeof value === "string" && Number.isFinite(Date.parse(value)));
+const parseSettings = (value: unknown): UserSettings | null => {
+  if (
+    !isRecord(value) ||
+    !["online", "away", "dnd", "invisible"].includes(
+      String(value.presenceStatus),
+    ) ||
+    typeof value.customStatus !== "string" ||
+    typeof value.showOnlineStatus !== "boolean" ||
+    typeof value.sendReadReceipts !== "boolean" ||
+    typeof value.showTypingIndicator !== "boolean" ||
+    typeof value.confirmGhostRelease !== "boolean" ||
+    typeof value.enterToSend !== "boolean" ||
+    !["small", "default", "large"].includes(String(value.messageTextSize)) ||
+    typeof value.updatedAt !== "string"
+  )
+    return null;
+  return value as UserSettings;
+};
 
 export const parseChatFriend = (value: unknown): ChatFriend | null => {
   if (
@@ -23,6 +42,9 @@ export const parseChatFriend = (value: unknown): ChatFriend | null => {
     (value.avatarUrl != null && typeof value.avatarUrl !== "string") ||
     (value.bio != null && typeof value.bio !== "string") ||
     typeof value.online !== "boolean" ||
+    (value.status != null &&
+      !["online", "away", "dnd", "offline"].includes(String(value.status))) ||
+    (value.customStatus != null && typeof value.customStatus !== "string") ||
     !isCount(value.unreadCount) ||
     (value.favorite != null && typeof value.favorite !== "boolean") ||
     (value.recentAt != null && typeof value.recentAt !== "string")
@@ -34,6 +56,10 @@ export const parseChatFriend = (value: unknown): ChatFriend | null => {
     avatarUrl: typeof value.avatarUrl === "string" ? value.avatarUrl : null,
     bio: typeof value.bio === "string" ? value.bio : "",
     online: value.online,
+    status: (value.status ??
+      (value.online ? "online" : "offline")) as ChatFriend["status"],
+    customStatus:
+      typeof value.customStatus === "string" ? value.customStatus : "",
     unreadCount: value.unreadCount,
     favorite: value.favorite === true,
     recentAt: typeof value.recentAt === "string" ? value.recentAt : null,
@@ -119,6 +145,10 @@ export const parseServerMessage = (raw: string): ServerMessage | null => {
   try {
     const value: unknown = JSON.parse(raw);
     if (!isRecord(value)) return null;
+    if (value.type === "settings.updated") {
+      const settings = parseSettings(value.settings);
+      return settings ? { type: "settings.updated", settings } : null;
+    }
     if (
       value.type === "message.new" ||
       value.type === "message.edited" ||
@@ -163,13 +193,27 @@ export const parseServerMessage = (raw: string): ServerMessage | null => {
         : null;
     }
     if (value.type === "presence.update") {
+      const status =
+        value.status === "online" ||
+        value.status === "away" ||
+        value.status === "dnd" ||
+        value.status === "offline"
+          ? value.status
+          : value.online
+            ? "online"
+            : "offline";
       return isId(value.userId) &&
         typeof value.online === "boolean" &&
+        (value.customStatus == null ||
+          typeof value.customStatus === "string") &&
         isCount(value.revision)
         ? {
             type: "presence.update",
             userId: value.userId,
             online: value.online,
+            status,
+            customStatus:
+              typeof value.customStatus === "string" ? value.customStatus : "",
             revision: value.revision,
           }
         : null;
@@ -205,6 +249,13 @@ export const parseServerMessage = (raw: string): ServerMessage | null => {
           !isRecord(friend) ||
           !isId(friend.id) ||
           typeof friend.online !== "boolean" ||
+          (friend.status != null &&
+            friend.status !== "online" &&
+            friend.status !== "away" &&
+            friend.status !== "dnd" &&
+            friend.status !== "offline") ||
+          (friend.customStatus != null &&
+            typeof friend.customStatus !== "string") ||
           !isCount(friend.presenceRevision) ||
           !isCount(friend.unreadCount)
         )
@@ -212,6 +263,10 @@ export const parseServerMessage = (raw: string): ServerMessage | null => {
         friends.push({
           id: friend.id,
           online: friend.online,
+          status: (friend.status ??
+            (friend.online ? "online" : "offline")) as ChatFriend["status"],
+          customStatus:
+            typeof friend.customStatus === "string" ? friend.customStatus : "",
           presenceRevision: friend.presenceRevision,
           unreadCount: friend.unreadCount,
         });

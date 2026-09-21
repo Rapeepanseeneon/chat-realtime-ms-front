@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import {
   type FormEvent,
+  type KeyboardEvent,
   useCallback,
   useEffect,
   useRef,
@@ -14,6 +15,7 @@ import { FriendManager } from "../../components/FriendManager";
 import { GroupManager } from "../../components/GroupManager";
 import { GroupMessageBubble } from "../../components/GroupMessageBubble";
 import { MessageBubble } from "../../components/MessageBubble";
+import { MobileBottomNav } from "../../components/MobileBottomNav";
 import { ProfileViewer } from "../../components/ProfileViewer";
 import { UserAvatar } from "../../components/UserAvatar";
 import type { GhostCommand } from "../../components/GhostMessage";
@@ -24,6 +26,7 @@ import type {
   GroupMessage,
   PrivateMessage,
   ReadReceipt,
+  UserSettings,
 } from "../../lib/chat-types";
 import {
   applyReadReceipt,
@@ -51,6 +54,17 @@ type ChatClientProps = {
 
 const websocketUrl = process.env.NEXT_PUBLIC_WS_URL?.trim();
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const defaultSettings: UserSettings = {
+  presenceStatus: "online",
+  customStatus: "",
+  showOnlineStatus: true,
+  sendReadReceipts: true,
+  showTypingIndicator: true,
+  confirmGhostRelease: true,
+  enterToSend: true,
+  messageTextSize: "default",
+  updatedAt: "",
+};
 const belongsToPair = (
   message: PrivateMessage,
   ownId: string,
@@ -97,9 +111,17 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isFriendManagerOpen, setIsFriendManagerOpen] = useState(false);
   const [profileTarget, setProfileTarget] = useState<ChatUser | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [presence, setPresence] = useState<
-    Record<string, { online: boolean; revision: number }>
+    Record<
+      string,
+      {
+        online: boolean;
+        status: ChatFriend["status"];
+        customStatus: string;
+        revision: number;
+      }
+    >
   >({});
   const [unreadState, setUnreadState] = useState<{
     synced: boolean;
@@ -122,10 +144,10 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const jumpToLatestRef = useRef(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const { typingByUser, updateTyping, stopTyping, handleTyping, clearTyping } =
-    useChatTyping(socketRef, currentUser.id);
+    useChatTyping(socketRef, currentUser.id, settings.showTypingIndicator);
   messagesRef.current = messages;
   conversationObscuredRef.current =
-    isSidebarOpen || isFriendManagerOpen || groupManagerOpen || !!profileTarget;
+    isFriendManagerOpen || groupManagerOpen || !!profileTarget;
 
   const selectedUser =
     friends.find((friend) => friend.id === selectedUserId) ?? null;
@@ -134,13 +156,18 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const displayedFriends = friends.map((friend) => ({
     ...friend,
     online: presence[friend.id]?.online ?? friend.online,
+    status: presence[friend.id]?.status ?? friend.status,
+    customStatus: presence[friend.id]?.customStatus ?? friend.customStatus,
     unreadCount: unreadState.synced
       ? (unreadState.counts[friend.id] ?? 0)
       : friend.unreadCount,
   }));
-  const selectedOnline = selectedUser
-    ? (presence[selectedUser.id]?.online ?? selectedUser.online)
-    : false;
+  const selectedStatus = selectedUser
+    ? (presence[selectedUser.id]?.status ?? selectedUser.status)
+    : "offline";
+  const selectedCustomStatus = selectedUser
+    ? (presence[selectedUser.id]?.customStatus ?? selectedUser.customStatus)
+    : "";
   const lastOwnMessageId = messages.findLast(
     (message) =>
       message.senderId === currentUser.id &&
@@ -262,6 +289,26 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     const controller = new AbortController();
     void loadFriends(controller.signal);
     void loadGroups(controller.signal);
+    const loadSettings = async () => {
+      if (!apiBaseUrl) return;
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/settings`, {
+          credentials: "include",
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const value = (await response.json()) as { settings?: UserSettings };
+        if (!value.settings) return;
+        setSettings(value.settings);
+        document.documentElement.dataset.messageSize =
+          value.settings.messageTextSize;
+        localStorage.setItem("pb-message-size", value.settings.messageTextSize);
+      } catch (error) {
+        if (!(error instanceof Error && error.name === "AbortError"))
+          setConnectionError("Chat preferences could not be loaded.");
+      }
+    };
+    void loadSettings();
     return () => {
       controller.abort();
     };
@@ -365,6 +412,16 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       }
       const serverMessage = parseServerMessage(event.data);
       if (!serverMessage) return;
+      if (serverMessage.type === "settings.updated") {
+        setSettings(serverMessage.settings);
+        document.documentElement.dataset.messageSize =
+          serverMessage.settings.messageTextSize;
+        localStorage.setItem(
+          "pb-message-size",
+          serverMessage.settings.messageTextSize,
+        );
+        return;
+      }
       if (serverMessage.type === "error") {
         readRequestsRef.current.clear();
         pendingEditRef.current = null;
@@ -413,6 +470,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                 ...current,
                 [serverMessage.userId]: {
                   online: serverMessage.online,
+                  status: serverMessage.status,
+                  customStatus: serverMessage.customStatus,
                   revision: serverMessage.revision,
                 },
               }
@@ -451,6 +510,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               )
                 updated[friend.id] = {
                   online: friend.online,
+                  status: friend.status,
+                  customStatus: friend.customStatus,
                   revision: friend.presenceRevision,
                 };
             }
@@ -675,12 +736,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
 
   useEffect(() => {
     markVisibleMessagesRead();
-    if (isSidebarOpen || isFriendManagerOpen) stopTyping();
+    if (isFriendManagerOpen) stopTyping();
   }, [
     messages,
     selectedUserId,
     status,
-    isSidebarOpen,
     isFriendManagerOpen,
     markVisibleMessagesRead,
     stopTyping,
@@ -962,6 +1022,12 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const sendGhostCommand = (command: GhostCommand) => {
     const socket = socketRef.current;
     if (ghostBusyRef.current || socket?.readyState !== WebSocket.OPEN) return;
+    if (
+      command.type === "ghost.release" &&
+      settings.confirmGhostRelease &&
+      !window.confirm("Release this Ghost message now?")
+    )
+      return;
     ghostBusyRef.current = command.messageId;
     setGhostBusyId(command.messageId);
     socket.send(JSON.stringify(command));
@@ -989,7 +1055,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     );
   };
   const updateGroupTyping = (value: string) => {
-    if (!selectedGroup || socketRef.current?.readyState !== WebSocket.OPEN)
+    if (
+      !settings.showTypingIndicator ||
+      !selectedGroup ||
+      socketRef.current?.readyState !== WebSocket.OPEN
+    )
       return;
     socketRef.current.send(
       JSON.stringify({ type: "group.typing.start", groupId: selectedGroup.id }),
@@ -1006,6 +1076,47 @@ export function ChatClient({ currentUser }: ChatClientProps) {
       1200,
     );
   };
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing ||
+      !settings.enterToSend
+    )
+      return;
+    event.preventDefault();
+    sendCurrentMessage();
+  };
+  const showMobileChatList = () => {
+    stopTyping();
+    if (
+      selectedGroupIdRef.current &&
+      socketRef.current?.readyState === WebSocket.OPEN
+    )
+      socketRef.current.send(
+        JSON.stringify({
+          type: "group.typing.stop",
+          groupId: selectedGroupIdRef.current,
+        }),
+      );
+    if (groupTypingTimerRef.current) {
+      clearTimeout(groupTypingTimerRef.current);
+      groupTypingTimerRef.current = null;
+    }
+    selectedUserIdRef.current = null;
+    selectedGroupIdRef.current = null;
+    setSelectedUserId(null);
+    setSelectedGroupId(null);
+    setMessages([]);
+    setGroupMessages([]);
+    setGroupTypingUsers({});
+    setText("");
+    setReplyId(null);
+    setEditingId(null);
+    setGroupReplyId(null);
+    setGroupEditingId(null);
+    setHistoryError(null);
+  };
   const groupReply = groupMessages.find(
       (message) => message.id === groupReplyId,
     ),
@@ -1017,7 +1128,9 @@ export function ChatClient({ currentUser }: ChatClientProps) {
 
   return (
     <main className="chat-shell">
-      <div className="chat-layout">
+      <div
+        className={`chat-layout${selectedUser || selectedGroup ? " mobile-conversation-active" : ""}`}
+      >
         <ChatSidebar
           username={currentUser.username}
           bio={currentUser.bio}
@@ -1036,7 +1149,6 @@ export function ChatClient({ currentUser }: ChatClientProps) {
             setGroupInfoTarget(null);
             setGroupManagerOpen(true);
           }}
-          onDrawerChange={setIsSidebarOpen}
         />
         <FriendManager
           isOpen={isFriendManagerOpen}
@@ -1067,6 +1179,16 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           <section className="chat-card" aria-labelledby="chat-title">
             <header className="chat-header">
               <div className="chat-title-block">
+                {selectedUser || selectedGroup ? (
+                  <button
+                    className="mobile-conversation-back"
+                    type="button"
+                    aria-label="Back to chats"
+                    onClick={showMobileChatList}
+                  >
+                    ←
+                  </button>
+                ) : null}
                 <div className="chat-brand">
                   <BrandLogo decorative />
                   <p className="eyebrow">Pb Messenger</p>
@@ -1110,10 +1232,18 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   <div className="chat-person-meta">
                     <p className="chat-presence">
                       <span
-                        className={`presence-dot${selectedOnline ? " presence-dot-online" : ""}`}
+                        className={`presence-dot presence-dot-${selectedStatus}`}
                         aria-hidden="true"
                       />
-                      {selectedOnline ? "Online" : "Offline"}
+                      <span>
+                        {selectedStatus === "dnd"
+                          ? "Do Not Disturb"
+                          : selectedStatus.charAt(0).toUpperCase() +
+                            selectedStatus.slice(1)}
+                        {selectedCustomStatus
+                          ? ` · ${selectedCustomStatus}`
+                          : ""}
+                      </span>
                     </p>
                     <button
                       type="button"
@@ -1283,8 +1413,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                       ? `Message ${selectedUser.username}`
                       : "Select a friend to start chatting"}
                 </span>
-                <input
-                  type="text"
+                <textarea
+                  rows={1}
                   value={text}
                   onChange={(event) => {
                     setText(event.target.value);
@@ -1302,6 +1432,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                       );
                     else stopTyping();
                   }}
+                  onKeyDown={handleComposerKeyDown}
                   placeholder={
                     selectedGroup
                       ? "Type a group message…"
@@ -1368,6 +1499,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           </section>
         </div>
       </div>
+      <MobileBottomNav />
     </main>
   );
 }

@@ -12,6 +12,7 @@ import type { TypingEvent } from "./chat-types";
 export function useChatTyping(
   socketRef: RefObject<WebSocket | null>,
   currentUserId: string,
+  enabled = true,
 ) {
   const [typingByUser, setTypingByUser] = useState<Record<string, boolean>>({});
   const incomingTimers = useRef(
@@ -36,6 +37,10 @@ export function useChatTyping(
 
   const updateTyping = useCallback(
     (receiverId: string, text: string) => {
+      if (!enabled) {
+        stopTyping();
+        return;
+      }
       if (outgoing.current?.receiverId !== receiverId) stopTyping();
       if (!text.trim() || socketRef.current?.readyState !== WebSocket.OPEN) {
         stopTyping();
@@ -51,7 +56,7 @@ export function useChatTyping(
       if (idleTimer.current) clearTimeout(idleTimer.current);
       idleTimer.current = setTimeout(stopTyping, 1_500);
     },
-    [socketRef, stopTyping],
+    [enabled, socketRef, stopTyping],
   );
 
   const handleTyping = useCallback(
@@ -102,6 +107,10 @@ export function useChatTyping(
       document.removeEventListener("visibilitychange", handleHidden);
     };
   }, [stopTyping]);
+
+  useEffect(() => {
+    if (!enabled) stopTyping();
+  }, [enabled, stopTyping]);
 
   return { typingByUser, updateTyping, stopTyping, handleTyping, clearTyping };
 }
