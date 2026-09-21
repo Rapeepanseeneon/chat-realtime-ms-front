@@ -1059,7 +1059,7 @@ h1 {
 }
 .message-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px 48px;
+  grid-template-columns: 44px minmax(0, 1fr) 48px 48px;
   align-items: end;
   gap: 8px;
   padding: 12px;
@@ -1351,10 +1351,12 @@ h1 {
     outline-offset: 2px;
   }
   .chat-brand {
-    margin-bottom: 4px;
-  }
-  .chat-brand .brand-logo {
     display: none;
+  }
+  .chat-header-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
   }
   .chat-header h1 {
     min-width: 0;
@@ -1411,7 +1413,7 @@ h1 {
   }
   .message-form {
     width: 100%;
-    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
   }
   .message-form.message-form-editing {
     grid-template-columns: minmax(0, 1fr) 58px;
@@ -1420,6 +1422,12 @@ h1 {
     min-width: 0;
     max-width: 100%;
     resize: none;
+  }
+  .message-field > span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .status {
     align-self: flex-start;
@@ -1454,7 +1462,7 @@ h1 {
     padding: 7px 9px;
   }
   .message-form {
-    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
     padding: 8px;
     gap: 6px;
   }
@@ -2391,6 +2399,37 @@ h1,
   min-width: 120px;
   max-width: min(72%, 620px);
 }
+.direct-message {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.direct-message .message-bubble-body {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgba(36, 49, 78, 0.05);
+}
+.direct-message.private-message-own .message-bubble-body {
+  border-color: var(--brand-primary);
+  background: var(--brand-primary);
+  color: #fff;
+}
+.direct-message > .message-actions {
+  margin: 3px 4px 0;
+  color: var(--text-muted);
+}
+.direct-message.private-message-own > .message-actions {
+  justify-content: flex-end;
+}
+.direct-message.private-message-other > .message-actions {
+  justify-content: flex-start;
+}
 .message-actions {
   gap: 2px;
   margin: 5px -5px -5px;
@@ -2494,6 +2533,267 @@ h1,
   background-image: none;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.attachment-menu-wrap {
+  position: relative;
+  align-self: end;
+}
+.message-form .attachment-menu-button {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  background: var(--surface-muted);
+  color: var(--brand-primary);
+  font-size: 1.5rem;
+}
+.attachment-menu {
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: 170px;
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 14px 36px var(--shadow);
+}
+.message-form .attachment-menu button {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 11px;
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  text-align: left;
+}
+.message-form .attachment-menu button:hover,
+.message-form .attachment-menu button:focus-visible {
+  background: var(--surface-muted);
+}
+.composer-attachment-preview,
+.composer-link-entry {
+  grid-column: 1 / -1;
+}
+.composer-attachment-preview {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--text);
+}
+.composer-attachment-preview > img,
+.composer-attachment-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface-muted);
+  object-fit: cover;
+  font-size: 1.35rem;
+}
+.composer-attachment-preview > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.composer-attachment-preview strong,
+.composer-attachment-preview small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-attachment-preview small {
+  color: var(--text-muted);
+}
+.message-form .composer-attachment-preview > button {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.25rem;
+}
+.upload-progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+.upload-progress > span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: var(--brand-primary);
+  transition: width 120ms linear;
+}
+.composer-link-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 7px;
+  align-items: end;
+}
+.composer-link-entry label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+.composer-link-entry input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+.message-form .composer-link-entry button {
+  min-height: 42px;
+  padding-inline: 12px;
+}
+.message p a {
+  color: var(--brand-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.private-message-own .message-bubble-body p a {
+  color: #fff;
+}
+.message-link-card,
+.message-file-card,
+.message-location-card {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
+  color: var(--text);
+  text-decoration: none;
+}
+.message-link-card {
+  display: grid;
+  gap: 3px;
+}
+.message-link-card span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-file-card > div,
+.message-location-card > div {
+  min-width: 0;
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+.message-file-card strong,
+.message-location-card strong,
+.message-file-card small,
+.message-location-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-file-card small,
+.message-location-card small {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.message-file-card a,
+.message-location-card a {
+  flex: 0 0 auto;
+  color: var(--brand-accent);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+.message-photo {
+  width: min(320px, 100%);
+  max-height: 320px;
+  display: block;
+  overflow: hidden;
+  margin-top: 9px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: zoom-in;
+}
+.message-photo img {
+  width: 100%;
+  max-height: 320px;
+  display: block;
+  object-fit: cover;
+}
+.attachment-lightbox {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 11, 24, 0.88);
+}
+.attachment-lightbox > button {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  right: 18px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 1.7rem;
+  cursor: pointer;
+}
+.attachment-lightbox > img {
+  max-width: min(100%, 1100px);
+  max-height: calc(100dvh - 48px);
+  object-fit: contain;
+}
+.private-message-own .message-file-card,
+.private-message-own .message-location-card,
+.private-message-own .message-link-card {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.private-message-own .message-file-card small,
+.private-message-own .message-location-card small,
+.private-message-own .message-link-card span,
+.private-message-own .message-file-card a,
+.private-message-own .message-location-card a {
+  color: rgba(255, 255, 255, 0.84);
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: #9ba9bd transparent;
@@ -2537,5 +2837,28 @@ h1,
   }
   .new-message-button {
     bottom: 82px;
+  }
+  .attachment-menu {
+    width: 158px;
+  }
+  .composer-link-entry {
+    grid-template-columns: 1fr 1fr;
+  }
+  .composer-link-entry label {
+    grid-column: 1 / -1;
+  }
+  .message-form .composer-link-entry button {
+    width: 100%;
+  }
+  .message-file-card,
+  .message-location-card {
+    flex-wrap: wrap;
+  }
+  .message-file-card a,
+  .message-location-card a {
+    margin-left: 28px;
+  }
+  .attachment-lightbox {
+    padding: 12px;
   }
 }

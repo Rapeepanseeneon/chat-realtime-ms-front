@@ -24,6 +24,7 @@ const original: PrivateMessage = {
   editedAt: null,
   deletedAt: null,
   replyToMessageId: null,
+  attachment: null,
   reply: null,
 };
 const reply: PrivateMessage = {

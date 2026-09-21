@@ -46,6 +46,16 @@ export type GroupMember = ChatUser & {
   joinedAt: string;
 };
 export type GroupInfo = ChatGroup & { members: GroupMember[] };
+export type MessageAttachment = {
+  id: string;
+  kind: "image" | "file" | "location";
+  fileName: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  contentUrl: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
 export type GroupMessage = {
   id: string;
   groupId: string;
@@ -57,6 +67,7 @@ export type GroupMessage = {
   editedAt: string | null;
   deletedAt: string | null;
   replyToMessageId: string | null;
+  attachment: MessageAttachment | null;
   reply: {
     id: string;
     senderId: string;
@@ -143,6 +154,7 @@ export type PrivateMessage = {
   editedAt: string | null;
   deletedAt: string | null;
   replyToMessageId: string | null;
+  attachment: MessageAttachment | null;
   reply: {
     id: string;
     senderId: string;

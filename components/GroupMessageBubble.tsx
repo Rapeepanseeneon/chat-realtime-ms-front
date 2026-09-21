@@ -1,5 +1,6 @@
 "use client";
 import type { GroupMessage } from "../lib/chat-types";
+import { MessageContent } from "./MessageContent";
 import { UserAvatar } from "./UserAvatar";
 type Props = {
   message: GroupMessage;
@@ -40,9 +41,14 @@ export function GroupMessageBubble({
           </span>
         </blockquote>
       ) : null}
-      <p>
-        {message.deletedAt ? "This message was deleted" : message.messageText}
-      </p>
+      {message.deletedAt ? (
+        <p>This message was deleted</p>
+      ) : (
+        <MessageContent
+          text={message.messageText}
+          attachment={message.attachment}
+        />
+      )}
       <div className="message-meta">
         <time>
           {new Date(message.createdAt).toLocaleTimeString([], {

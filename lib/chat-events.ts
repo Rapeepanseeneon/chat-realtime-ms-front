@@ -1,5 +1,6 @@
 import type {
   ChatFriend,
+  MessageAttachment,
   PrivateMessage,
   ReadReceipt,
   ServerMessage,
@@ -15,6 +16,46 @@ const isCount = (value: unknown): value is number =>
 const isNullableDate = (value: unknown) =>
   value == null ||
   (typeof value === "string" && Number.isFinite(Date.parse(value)));
+const parseAttachment = (value: unknown): MessageAttachment | null | false => {
+  if (value == null) return null;
+  if (
+    !isRecord(value) ||
+    !isId(value.id) ||
+    !["image", "file", "location"].includes(String(value.kind)) ||
+    (value.fileName != null && typeof value.fileName !== "string") ||
+    (value.mimeType != null && typeof value.mimeType !== "string") ||
+    (value.sizeBytes != null &&
+      (typeof value.sizeBytes !== "number" || value.sizeBytes < 0)) ||
+    (value.contentUrl != null && typeof value.contentUrl !== "string") ||
+    (value.latitude != null &&
+      (typeof value.latitude !== "number" ||
+        value.latitude < -90 ||
+        value.latitude > 90)) ||
+    (value.longitude != null &&
+      (typeof value.longitude !== "number" ||
+        value.longitude < -180 ||
+        value.longitude > 180))
+  )
+    return false;
+  const kind = value.kind as MessageAttachment["kind"];
+  if (
+    (kind === "location" &&
+      (typeof value.latitude !== "number" ||
+        typeof value.longitude !== "number")) ||
+    (kind !== "location" && typeof value.contentUrl !== "string")
+  )
+    return false;
+  return {
+    id: value.id,
+    kind,
+    fileName: typeof value.fileName === "string" ? value.fileName : null,
+    mimeType: typeof value.mimeType === "string" ? value.mimeType : null,
+    sizeBytes: typeof value.sizeBytes === "number" ? value.sizeBytes : null,
+    contentUrl: typeof value.contentUrl === "string" ? value.contentUrl : null,
+    latitude: typeof value.latitude === "number" ? value.latitude : null,
+    longitude: typeof value.longitude === "number" ? value.longitude : null,
+  };
+};
 const parseSettings = (value: unknown): UserSettings | null => {
   if (
     !isRecord(value) ||
@@ -67,6 +108,9 @@ export const parseChatFriend = (value: unknown): ChatFriend | null => {
 };
 
 export const parsePrivateMessage = (value: unknown): PrivateMessage | null => {
+  const attachment = isRecord(value)
+    ? parseAttachment(value.attachment)
+    : false;
   if (
     !isRecord(value) ||
     !isId(value.id) ||
@@ -85,7 +129,8 @@ export const parsePrivateMessage = (value: unknown): PrivateMessage | null => {
         String(value.messageStatus),
       )) ||
     (value.deliveryId != null && !isId(value.deliveryId)) ||
-    (value.replyToMessageId != null && !isId(value.replyToMessageId))
+    (value.replyToMessageId != null && !isId(value.replyToMessageId)) ||
+    attachment === false
   )
     return null;
   let reply: PrivateMessage["reply"] = null;
@@ -137,6 +182,7 @@ export const parsePrivateMessage = (value: unknown): PrivateMessage | null => {
       typeof value.replyToMessageId === "string"
         ? value.replyToMessageId
         : null,
+    attachment,
     reply,
   };
 };

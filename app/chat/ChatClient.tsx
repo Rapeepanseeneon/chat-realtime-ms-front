@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import {
+  type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
   useCallback,
@@ -41,6 +42,9 @@ import {
 import { useChatTyping } from "../../lib/use-chat-typing";
 
 type ConnectionStatus = "Connecting" | "Connected" | "Disconnected";
+type PendingAttachment =
+  | { kind: "image" | "file"; file: File; previewUrl: string | null }
+  | { kind: "location"; latitude: number; longitude: number };
 
 type ChatClientProps = {
   currentUser: {
@@ -92,6 +96,14 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   >({});
   const [messages, setMessages] = useState<PrivateMessage[]>([]);
   const [text, setText] = useState("");
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [linkEntryOpen, setLinkEntryOpen] = useState(false);
+  const [linkValue, setLinkValue] = useState("");
+  const [pendingAttachment, setPendingAttachment] =
+    useState<PendingAttachment | null>(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [locating, setLocating] = useState(false);
   const [replyId, setReplyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editPending, setEditPending] = useState(false);
@@ -140,6 +152,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   );
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messageAreaRef = useRef<HTMLDivElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nearBottomRef = useRef(true);
   const jumpToLatestRef = useRef(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
@@ -148,6 +162,22 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   messagesRef.current = messages;
   conversationObscuredRef.current =
     isFriendManagerOpen || groupManagerOpen || !!profileTarget;
+
+  const clearPendingAttachment = useCallback(() => {
+    setPendingAttachment(null);
+    setUploadProgress(0);
+    setAttachmentMenuOpen(false);
+  }, []);
+
+  useEffect(() => {
+    const previewUrl =
+      pendingAttachment && "previewUrl" in pendingAttachment
+        ? pendingAttachment.previewUrl
+        : null;
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [pendingAttachment]);
 
   const selectedUser =
     friends.find((friend) => friend.id === selectedUserId) ?? null;
@@ -816,6 +846,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setSelectedUserId(user.id);
     setMessages([]);
     setText("");
+    clearPendingAttachment();
+    setLinkEntryOpen(false);
     setReplyId(null);
     setEditingId(null);
     pendingEditRef.current = null;
@@ -847,11 +879,191 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setGroupMessages([]);
     setGroupTypingUsers({});
     setText("");
+    clearPendingAttachment();
+    setLinkEntryOpen(false);
     setReplyId(null);
     setEditingId(null);
     setGroupReplyId(null);
     setGroupEditingId(null);
     setHistoryError(null);
+  };
+
+  const chooseAttachment = (
+    event: ChangeEvent<HTMLInputElement>,
+    kind: "image" | "file",
+  ) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file) return;
+    const limit = kind === "image" ? 8 * 1024 * 1024 : 20 * 1024 * 1024;
+    if (file.size > limit) {
+      setConnectionError(
+        `${kind === "image" ? "Photo" : "File"} must be smaller than ${limit / 1024 / 1024} MB.`,
+      );
+      return;
+    }
+    if (kind === "image" && !file.type.startsWith("image/")) {
+      setConnectionError("Choose a valid image file.");
+      return;
+    }
+    setConnectionError(null);
+    setReplyId(null);
+    setGroupReplyId(null);
+    setPendingAttachment({
+      kind,
+      file,
+      previewUrl: kind === "image" ? URL.createObjectURL(file) : null,
+    });
+    setAttachmentMenuOpen(false);
+  };
+
+  const requestCurrentLocation = () => {
+    setAttachmentMenuOpen(false);
+    if (!("geolocation" in navigator)) {
+      setConnectionError("Location is not supported by this browser.");
+      return;
+    }
+    setLocating(true);
+    setConnectionError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocating(false);
+        setReplyId(null);
+        setGroupReplyId(null);
+        setPendingAttachment({
+          kind: "location",
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+      },
+      (error) => {
+        setLocating(false);
+        setConnectionError(
+          error.code === error.PERMISSION_DENIED
+            ? "Location permission was denied. You can allow it in your browser settings and try again."
+            : "Your current location could not be found. Please try again.",
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    );
+  };
+
+  const addLinkToComposer = () => {
+    try {
+      const url = new URL(linkValue.trim());
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw Error();
+      setText(url.toString());
+      setLinkValue("");
+      setLinkEntryOpen(false);
+      setAttachmentMenuOpen(false);
+      setConnectionError(null);
+    } catch {
+      setConnectionError("Enter a valid http:// or https:// link.");
+    }
+  };
+
+  const uploadCurrentAttachment = async () => {
+    if (
+      !apiBaseUrl ||
+      !pendingAttachment ||
+      uploadingAttachment ||
+      (!selectedUser && !selectedGroup)
+    )
+      return;
+    const scope = selectedGroup ? "group" : "private";
+    const targetId = selectedGroup?.id ?? selectedUser!.id;
+    setUploadingAttachment(true);
+    setUploadProgress(0);
+    setConnectionError(null);
+    try {
+      let value: unknown;
+      if (pendingAttachment.kind === "location") {
+        const response = await fetch(`${apiBaseUrl}/api/attachments/location`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scope,
+            targetId,
+            latitude: pendingAttachment.latitude,
+            longitude: pendingAttachment.longitude,
+            caption: text.trim(),
+          }),
+        });
+        value = await response.json().catch(() => null);
+        if (!response.ok)
+          throw new Error(
+            isRecord(value) && typeof value.error === "string"
+              ? value.error
+              : "Location could not be sent.",
+          );
+      } else {
+        value = await new Promise<unknown>((resolve, reject) => {
+          const request = new XMLHttpRequest();
+          request.open("POST", `${apiBaseUrl}/api/attachments`);
+          request.withCredentials = true;
+          request.upload.onprogress = (event) => {
+            if (event.lengthComputable)
+              setUploadProgress(Math.round((event.loaded / event.total) * 100));
+          };
+          request.onload = () => {
+            let body: unknown = null;
+            try {
+              body = JSON.parse(request.responseText);
+            } catch {
+              // The status-specific fallback below remains user friendly.
+            }
+            if (request.status >= 200 && request.status < 300) resolve(body);
+            else
+              reject(
+                new Error(
+                  isRecord(body) && typeof body.error === "string"
+                    ? body.error
+                    : "Attachment could not be sent.",
+                ),
+              );
+          };
+          request.onerror = () =>
+            reject(new Error("Could not reach the attachment server."));
+          const form = new FormData();
+          form.set("scope", scope);
+          form.set("targetId", targetId);
+          form.set("kind", pendingAttachment.kind);
+          form.set("caption", text.trim());
+          form.set("file", pendingAttachment.file);
+          request.send(form);
+        });
+      }
+      if (!isRecord(value) || !isRecord(value.message))
+        throw new Error("Attachment response was invalid.");
+      if (scope === "private") {
+        const message = parsePrivateMessage(value.message);
+        if (!message) throw new Error("Attachment message was invalid.");
+        setMessages((current) => mergeMessages(current, [message]));
+      } else {
+        const message = value.message as GroupMessage;
+        if (message.groupId !== targetId)
+          throw new Error("Group attachment response was invalid.");
+        setGroupMessages((current) => {
+          const byId = new Map(current.map((item) => [item.id, item]));
+          byId.set(message.id, message);
+          return [...byId.values()].sort((a, b) =>
+            BigInt(a.id) < BigInt(b.id) ? -1 : 1,
+          );
+        });
+      }
+      setText("");
+      clearPendingAttachment();
+    } catch (error) {
+      setConnectionError(
+        error instanceof Error
+          ? error.message
+          : "Attachment could not be sent.",
+      );
+    } finally {
+      setUploadingAttachment(false);
+      setUploadProgress(0);
+    }
   };
 
   const sendCurrentMessage = (ghost = false) => {
@@ -934,7 +1146,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   };
   const sendMessage = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    sendCurrentMessage();
+    if (pendingAttachment) void uploadCurrentAttachment();
+    else sendCurrentMessage();
   };
 
   const closeFriendManager = useCallback(() => {
@@ -978,6 +1191,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const startReply = (message: PrivateMessage) => {
     if (pendingEditRef.current) return;
     if (editingId) setText("");
+    clearPendingAttachment();
     setEditingId(null);
     setReplyId(message.id);
   };
@@ -989,6 +1203,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     )
       return;
     setReplyId(null);
+    clearPendingAttachment();
     setEditingId(message.id);
     setText(message.messageText);
   };
@@ -1033,12 +1248,14 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     socket.send(JSON.stringify(command));
   };
   const startGroupReply = (message: GroupMessage) => {
+    clearPendingAttachment();
     setGroupEditingId(null);
     setGroupReplyId(message.id);
     setText("");
   };
   const startGroupEdit = (message: GroupMessage) => {
     if (message.senderId !== currentUser.id || message.deletedAt) return;
+    clearPendingAttachment();
     setGroupReplyId(null);
     setGroupEditingId(message.id);
     setText(message.messageText);
@@ -1085,7 +1302,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     )
       return;
     event.preventDefault();
-    sendCurrentMessage();
+    if (pendingAttachment) void uploadCurrentAttachment();
+    else sendCurrentMessage();
   };
   const showMobileChatList = () => {
     stopTyping();
@@ -1111,6 +1329,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setGroupMessages([]);
     setGroupTypingUsers({});
     setText("");
+    clearPendingAttachment();
+    setLinkEntryOpen(false);
     setReplyId(null);
     setEditingId(null);
     setGroupReplyId(null);
@@ -1365,6 +1585,76 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               className={`message-form${editingId || groupEditingId ? " message-form-editing" : ""}`}
               onSubmit={sendMessage}
             >
+              {pendingAttachment ? (
+                <div className="composer-attachment-preview" role="status">
+                  {pendingAttachment.kind === "image" &&
+                  pendingAttachment.previewUrl ? (
+                    <img
+                      src={pendingAttachment.previewUrl}
+                      alt={`Preview ${pendingAttachment.file.name}`}
+                    />
+                  ) : (
+                    <span
+                      className="composer-attachment-icon"
+                      aria-hidden="true"
+                    >
+                      {pendingAttachment.kind === "file" ? "📎" : "📍"}
+                    </span>
+                  )}
+                  <div>
+                    <strong>
+                      {pendingAttachment.kind === "location"
+                        ? "Current location"
+                        : pendingAttachment.file.name}
+                    </strong>
+                    <small>
+                      {pendingAttachment.kind === "location"
+                        ? `${pendingAttachment.latitude.toFixed(5)}, ${pendingAttachment.longitude.toFixed(5)}`
+                        : `${(pendingAttachment.file.size / 1024).toFixed(1)} KB`}
+                    </small>
+                    {uploadingAttachment ? (
+                      <span className="upload-progress">
+                        <span style={{ width: `${uploadProgress}%` }} />
+                      </span>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Cancel attachment"
+                    disabled={uploadingAttachment}
+                    onClick={clearPendingAttachment}
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              {linkEntryOpen ? (
+                <div className="composer-link-entry">
+                  <label>
+                    <span>Paste a link</span>
+                    <input
+                      autoFocus
+                      type="url"
+                      inputMode="url"
+                      value={linkValue}
+                      placeholder="https://example.com"
+                      onChange={(event) => setLinkValue(event.target.value)}
+                    />
+                  </label>
+                  <button type="button" onClick={addLinkToComposer}>
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLinkEntryOpen(false);
+                      setLinkValue("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : null}
               {replyId || editingId || groupReplyId || groupEditingId ? (
                 <div className="composer-context" role="status">
                   <div>
@@ -1403,6 +1693,74 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   >
                     ×
                   </button>
+                </div>
+              ) : null}
+              {!editingId && !groupEditingId ? (
+                <div className="attachment-menu-wrap">
+                  <button
+                    className="attachment-menu-button"
+                    type="button"
+                    aria-label="Add attachment"
+                    aria-expanded={attachmentMenuOpen}
+                    disabled={
+                      (!selectedUser && !selectedGroup) ||
+                      uploadingAttachment ||
+                      ghostCreating
+                    }
+                    onClick={() => setAttachmentMenuOpen((open) => !open)}
+                  >
+                    +
+                  </button>
+                  {attachmentMenuOpen ? (
+                    <div className="attachment-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => photoInputRef.current?.click()}
+                      >
+                        🖼 Photo
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        📎 File
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setLinkEntryOpen(true);
+                          setAttachmentMenuOpen(false);
+                        }}
+                      >
+                        🔗 Link
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={locating}
+                        onClick={requestCurrentLocation}
+                      >
+                        📍 {locating ? "Locating…" : "Location"}
+                      </button>
+                    </div>
+                  ) : null}
+                  <input
+                    ref={photoInputRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={(event) => chooseAttachment(event, "image")}
+                  />
+                  <input
+                    ref={fileInputRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept=".pdf,.txt,.csv,.zip,.docx,.xlsx,.pptx"
+                    onChange={(event) => chooseAttachment(event, "file")}
+                  />
                 </div>
               ) : null}
               <label className="field message-field">
@@ -1444,7 +1802,8 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                   disabled={
                     (!selectedUser && !selectedGroup) ||
                     editPending ||
-                    ghostCreating
+                    ghostCreating ||
+                    uploadingAttachment
                   }
                 />
               </label>
@@ -1463,7 +1822,9 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                     !selectedUser ||
                     selectedGroup !== null ||
                     !text.trim() ||
-                    ghostCreating
+                    ghostCreating ||
+                    pendingAttachment !== null ||
+                    uploadingAttachment
                   }
                   onClick={() => sendCurrentMessage(true)}
                 >
@@ -1482,12 +1843,13 @@ export function ChatClient({ currentUser }: ChatClientProps) {
                 disabled={
                   status !== "Connected" ||
                   (!selectedUser && !selectedGroup) ||
-                  !text.trim() ||
+                  (!text.trim() && !pendingAttachment) ||
                   editPending ||
-                  ghostCreating
+                  ghostCreating ||
+                  uploadingAttachment
                 }
               >
-                {editPending ? (
+                {editPending || uploadingAttachment ? (
                   "…"
                 ) : editingId || groupEditingId ? (
                   "Save"
