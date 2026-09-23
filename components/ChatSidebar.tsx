@@ -133,8 +133,8 @@ export function ChatSidebar(props: Props) {
           </div>
           <Link
             className="sidebar-profile-link"
-            href="/profile/edit"
-            aria-label="Edit profile"
+            href="/profile/me"
+            aria-label="View your profile"
           >
             ⚙
           </Link>
@@ -145,6 +145,18 @@ export function ChatSidebar(props: Props) {
             href="/chat"
           >
             💬 <span>Chat</span>
+          </Link>
+          <Link
+            className={`sidebar-nav-link${pathname === "/friends" ? " sidebar-nav-link-active" : ""}`}
+            href="/friends"
+          >
+            👥 <span>Friends</span>
+          </Link>
+          <Link
+            className={`sidebar-nav-link${pathname.startsWith("/profile") ? " sidebar-nav-link-active" : ""}`}
+            href="/profile/me"
+          >
+            ◉ <span>Profile</span>
           </Link>
           <Link
             className={`sidebar-nav-link${pathname === "/settings" ? " sidebar-nav-link-active" : ""}`}
@@ -170,9 +182,7 @@ export function ChatSidebar(props: Props) {
           >
             <div className="sidebar-section-heading">
               <h2 id="contacts-title">Friends</h2>
-              <button type="button" onClick={() => setViewAll("friends")}>
-                View all ›
-              </button>
+              <Link href="/friends">View all ›</Link>
             </div>
             {props.friendsLoading ? (
               <p className="sidebar-list-message">Loading friends…</p>
@@ -185,15 +195,9 @@ export function ChatSidebar(props: Props) {
                 {normalized ? "No matching friends." : "No friends yet."}
               </p>
             )}
-            <button
-              className="sidebar-add-friend"
-              type="button"
-              onClick={() => {
-                props.onManageFriends();
-              }}
-            >
+            <Link className="sidebar-add-friend" href="/friends">
               + Find friends & requests
-            </button>
+            </Link>
           </section>
           <section className="sidebar-groups" aria-labelledby="groups-title">
             <div className="sidebar-section-heading">

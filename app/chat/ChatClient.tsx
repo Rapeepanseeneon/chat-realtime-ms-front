@@ -16,11 +16,9 @@ import { ConversationList } from "../../components/chat/ConversationList";
 import { ConversationPane } from "../../components/chat/ConversationPane";
 import { MessageComposer } from "../../components/chat/MessageComposer";
 import { MessageList } from "../../components/chat/MessageList";
-import { FriendManager } from "../../components/FriendManager";
 import { GroupManager } from "../../components/GroupManager";
 import { GroupMessageBubble } from "../../components/GroupMessageBubble";
 import { MessageBubble } from "../../components/MessageBubble";
-import { ProfileViewer } from "../../components/ProfileViewer";
 import { VoiceCallOverlay } from "../../components/VoiceCallOverlay";
 import type { GhostCommand } from "../../components/GhostMessage";
 import type {
@@ -59,6 +57,7 @@ type ChatClientProps = {
     bio: string;
     avatarUrl: string | null;
   };
+  initialUserId?: string | null;
 };
 
 const websocketUrl = getWebSocketUrl();
@@ -83,7 +82,10 @@ const belongsToPair = (
   ((message.senderId === ownId && message.receiverId === friendId) ||
     (message.senderId === friendId && message.receiverId === ownId));
 
-export function ChatClient({ currentUser }: ChatClientProps) {
+export function ChatClient({
+  currentUser,
+  initialUserId = null,
+}: ChatClientProps) {
   const router = useRouter();
   const [friends, setFriends] = useState<ChatFriend[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -126,8 +128,6 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const [friendsError, setFriendsError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [isFriendManagerOpen, setIsFriendManagerOpen] = useState(false);
-  const [profileTarget, setProfileTarget] = useState<ChatUser | null>(null);
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [presence, setPresence] = useState<
     Record<
@@ -170,8 +170,7 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   voiceSignalHandlerRef.current = voiceCall.handleSignal;
   voiceDisconnectHandlerRef.current = voiceCall.handleSignalingDisconnect;
   messagesRef.current = messages;
-  conversationObscuredRef.current =
-    isFriendManagerOpen || groupManagerOpen || !!profileTarget;
+  conversationObscuredRef.current = groupManagerOpen;
 
   const clearPendingAttachment = useCallback(() => {
     setPendingAttachment(null);
@@ -790,12 +789,12 @@ export function ChatClient({ currentUser }: ChatClientProps) {
 
   useEffect(() => {
     markVisibleMessagesRead();
-    if (isFriendManagerOpen) stopTyping();
+    if (groupManagerOpen) stopTyping();
   }, [
     messages,
     selectedUserId,
     status,
-    isFriendManagerOpen,
+    groupManagerOpen,
     markVisibleMessagesRead,
     stopTyping,
   ]);
@@ -878,6 +877,15 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     setEditPending(false);
     setHistoryError(null);
   };
+
+  useEffect(() => {
+    if (!initialUserId || selectedUserIdRef.current === initialUserId) return;
+    const requestedFriend = friends.find(
+      (friend) => friend.id === initialUserId,
+    );
+    if (requestedFriend) selectUser(requestedFriend);
+  }, [friends, initialUserId]);
+
   const selectGroup = (group: ChatGroup) => {
     if (selectedGroupIdRef.current === group.id) return;
     stopTyping();
@@ -1174,10 +1182,6 @@ export function ChatClient({ currentUser }: ChatClientProps) {
     else sendCurrentMessage();
   };
 
-  const closeFriendManager = useCallback(() => {
-    setIsFriendManagerOpen(false);
-  }, []);
-
   const toggleFavorite = async (friend: ChatFriend) => {
     if (!apiBaseUrl) return;
     const favorite = !friend.favorite;
@@ -1385,23 +1389,16 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           selectedGroupId={selectedGroupId}
           friendsLoading={friendsLoading}
           onSelectUser={selectUser}
-          onManageFriends={() => setIsFriendManagerOpen(true)}
-          onViewProfile={setProfileTarget}
+          onManageFriends={() => router.push("/friends")}
+          onViewProfile={(user) =>
+            router.push(`/profile/${encodeURIComponent(user.username)}`)
+          }
           onToggleFavorite={(friend) => void toggleFavorite(friend)}
           onSelectGroup={selectGroup}
           onCreateGroup={() => {
             setGroupInfoTarget(null);
             setGroupManagerOpen(true);
           }}
-        />
-        <FriendManager
-          isOpen={isFriendManagerOpen}
-          onClose={closeFriendManager}
-          onFriendsChanged={() => void loadFriends()}
-        />
-        <ProfileViewer
-          user={profileTarget}
-          onClose={() => setProfileTarget(null)}
         />
         <GroupManager
           isOpen={groupManagerOpen}
@@ -1442,7 +1439,9 @@ export function ChatClient({ currentUser }: ChatClientProps) {
               setGroupInfoTarget(group);
               setGroupManagerOpen(true);
             }}
-            onViewProfile={setProfileTarget}
+            onViewProfile={(user) =>
+              router.push(`/profile/${encodeURIComponent(user.username)}`)
+            }
             onStartCall={(callType) => {
               if (selectedUser)
                 void voiceCall.startCall(

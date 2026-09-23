@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 import type { ProfileLink } from "../lib/chat-types";
+import type { ProfilePrivacy } from "../lib/friends-types";
 import { getApiBaseUrl } from "../lib/runtime-config";
 import { ThemeControl } from "./ThemeControl";
 import { UserAvatar } from "./UserAvatar";
@@ -12,6 +13,8 @@ type ProfileFormProps = {
   email: string;
   bio: string;
   avatarUrl: string | null;
+  displayName?: string;
+  redirectAfterSave?: string | null;
 };
 const apiBaseUrl = getApiBaseUrl();
 const emptyLink = (): ProfileLink => ({
@@ -28,6 +31,12 @@ export function ProfileForm(initial: ProfileFormProps) {
   const [success, setSuccess] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [avatarPending, setAvatarPending] = useState(false);
+  const [privacy, setPrivacy] = useState<ProfilePrivacy>({
+    profileVisibility: "friends",
+    friendListVisibility: "only_me",
+    mutualFriendsVisibility: "friends",
+    onlineStatusVisibility: "friends",
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -39,8 +48,12 @@ export function ProfileForm(initial: ProfileFormProps) {
           signal: controller.signal,
         });
         if (response.ok) {
-          const value = (await response.json()) as { links?: ProfileLink[] };
+          const value = (await response.json()) as {
+            links?: ProfileLink[];
+            profile?: { privacy?: ProfilePrivacy | null };
+          };
           setLinks(Array.isArray(value.links) ? value.links : []);
+          if (value.profile?.privacy) setPrivacy(value.profile.privacy);
         }
       } catch (loadError) {
         if (!(loadError instanceof Error && loadError.name === "AbortError"))
@@ -128,6 +141,7 @@ export function ProfileForm(initial: ProfileFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: form.get("username"),
+          displayName: form.get("displayName"),
           email: form.get("email"),
           bio: form.get("bio"),
           links: links.map(({ platform, label, url }) => ({
@@ -138,9 +152,19 @@ export function ProfileForm(initial: ProfileFormProps) {
         }),
       });
       const value = await readResponse(response);
+      await readResponse(
+        await fetch(`${apiBaseUrl}/api/profile/privacy`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(privacy),
+        }),
+      );
       setSuccess(value.message ?? "Profile updated successfully.");
       router.refresh();
-      setTimeout(() => router.replace("/chat"), 650);
+      if (initial.redirectAfterSave)
+        setTimeout(() => router.replace(initial.redirectAfterSave!), 650);
+      else setPending(false);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Save failed.");
       setPending(false);
@@ -187,6 +211,16 @@ export function ProfileForm(initial: ProfileFormProps) {
           </div>
         </div>
       </section>
+      <label className="field">
+        <span>Display name</span>
+        <input
+          name="displayName"
+          defaultValue={initial.displayName || initial.username}
+          required
+          maxLength={80}
+          autoComplete="name"
+        />
+      </label>
       <label className="field">
         <span>Username</span>
         <input
@@ -290,6 +324,85 @@ export function ProfileForm(initial: ProfileFormProps) {
             </div>
           ))
         )}
+      </section>
+      <section
+        className="profile-privacy-editor"
+        aria-labelledby="privacy-title"
+      >
+        <div className="profile-section-title">
+          <strong id="privacy-title">Privacy</strong>
+          <span>Enforced by Pb Messenger</span>
+        </div>
+        <div className="profile-privacy-grid">
+          <label>
+            <span>Profile</span>
+            <select
+              value={privacy.profileVisibility}
+              onChange={(event) =>
+                setPrivacy((current) => ({
+                  ...current,
+                  profileVisibility: event.target
+                    .value as ProfilePrivacy["profileVisibility"],
+                }))
+              }
+            >
+              <option value="public">Public</option>
+              <option value="friends">Friends only</option>
+              <option value="private">Private</option>
+            </select>
+          </label>
+          <label>
+            <span>Friend list</span>
+            <select
+              value={privacy.friendListVisibility}
+              onChange={(event) =>
+                setPrivacy((current) => ({
+                  ...current,
+                  friendListVisibility: event.target
+                    .value as ProfilePrivacy["friendListVisibility"],
+                }))
+              }
+            >
+              <option value="everyone">Everyone</option>
+              <option value="friends">Friends</option>
+              <option value="only_me">Only me</option>
+            </select>
+          </label>
+          <label>
+            <span>Mutual friends</span>
+            <select
+              value={privacy.mutualFriendsVisibility}
+              onChange={(event) =>
+                setPrivacy((current) => ({
+                  ...current,
+                  mutualFriendsVisibility: event.target
+                    .value as ProfilePrivacy["mutualFriendsVisibility"],
+                }))
+              }
+            >
+              <option value="everyone">Everyone</option>
+              <option value="friends">Friends</option>
+              <option value="only_me">Only me</option>
+            </select>
+          </label>
+          <label>
+            <span>Online status</span>
+            <select
+              value={privacy.onlineStatusVisibility}
+              onChange={(event) =>
+                setPrivacy((current) => ({
+                  ...current,
+                  onlineStatusVisibility: event.target
+                    .value as ProfilePrivacy["onlineStatusVisibility"],
+                }))
+              }
+            >
+              <option value="everyone">Everyone</option>
+              <option value="friends">Friends</option>
+              <option value="nobody">Nobody</option>
+            </select>
+          </label>
+        </div>
       </section>
       <ThemeControl />
       {error ? (
