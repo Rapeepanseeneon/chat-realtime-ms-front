@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
+import { getApiBaseUrl } from "../lib/runtime-config";
 
 type AuthFormProps = { mode: "login" | "register" };
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const apiBaseUrl = getApiBaseUrl();
 
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();

@@ -19,26 +19,39 @@ export type CallPeer = {
   avatarUrl: string | null;
 };
 
+export type CallType = "voice" | "video";
+
 export type VoiceCallView = {
   phase: CallPhase;
   callId: string | null;
   peer: CallPeer | null;
   direction: "outgoing" | "incoming" | null;
+  callType: CallType;
   message: string;
   muted: boolean;
+  cameraOff: boolean;
   speakerOn: boolean;
   durationSeconds: number;
+  localStream: MediaStream | null;
+  remoteStream: MediaStream | null;
 };
 
 type CallContext = {
   callId: string;
   peer: CallPeer;
   direction: "outgoing" | "incoming";
+  callType: CallType;
   remoteOffer: string | null;
 };
 
 type CallSignal =
-  | { type: "call.offer"; callId: string; caller: CallPeer; sdp: string }
+  | {
+      type: "call.offer";
+      callId: string;
+      caller: CallPeer;
+      sdp: string;
+      callType: CallType;
+    }
   | {
       type: "call.answer";
       callId: string;
@@ -75,10 +88,51 @@ const initialView: VoiceCallView = {
   callId: null,
   peer: null,
   direction: null,
+  callType: "voice",
   message: "",
   muted: false,
+  cameraOff: false,
   speakerOn: true,
   durationSeconds: 0,
+  localStream: null,
+  remoteStream: null,
+};
+
+const voiceDebugEnabled = process.env.NEXT_PUBLIC_WEBRTC_DEBUG === "true";
+
+const voiceDebug = (event: string, details: Record<string, unknown>) => {
+  if (voiceDebugEnabled) console.info(`[voice-call] ${event}`, details);
+};
+
+export const audioDirectionFromSdp = (sdp: string | null | undefined) => {
+  const audioSection = sdp
+    ?.split(/\r?\nm=/)
+    .find((section) => section.startsWith("audio "));
+  return (
+    audioSection?.match(
+      /(?:^|\r?\n)a=(sendrecv|sendonly|recvonly|inactive)/,
+    )?.[1] ?? null
+  );
+};
+
+const trackDetails = (track: MediaStreamTrack) => ({
+  kind: track.kind,
+  enabled: track.enabled,
+  muted: track.muted,
+  readyState: track.readyState,
+});
+
+const addLocalTracks = (connection: RTCPeerConnection, stream: MediaStream) => {
+  for (const track of stream.getTracks()) {
+    const sender = connection.addTrack(track, stream);
+    const transceiver = connection
+      .getTransceivers()
+      .find((entry) => entry.sender === sender);
+    voiceDebug("local-track-added", {
+      track: trackDetails(track),
+      transceiverDirection: transceiver?.direction ?? null,
+    });
+  }
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -94,12 +148,16 @@ export const parseCallSignal = (value: unknown): CallSignal | null => {
     typeof value.caller.id === "string" &&
     typeof value.caller.username === "string" &&
     (value.caller.avatarUrl === null ||
-      typeof value.caller.avatarUrl === "string")
+      typeof value.caller.avatarUrl === "string") &&
+    (value.callType === undefined ||
+      value.callType === "voice" ||
+      value.callType === "video")
   )
     return {
       type: value.type,
       callId: value.callId,
       sdp: value.sdp,
+      callType: value.callType === "video" ? "video" : "voice",
       caller: {
         id: value.caller.id,
         username: value.caller.username,
@@ -150,6 +208,35 @@ export const microphoneError = (error: unknown) => {
   return "The microphone could not be started. Please try again.";
 };
 
+export const mediaPermissionError = (error: unknown, callType: CallType) => {
+  if (callType === "voice") return microphoneError(error);
+  if (error instanceof DOMException && error.name === "SecurityError")
+    return "Video calls require HTTPS on mobile or LAN connections.";
+  if (error instanceof DOMException && error.name === "NotAllowedError")
+    return "Camera or microphone permission was denied. Allow both and try again.";
+  if (error instanceof DOMException && error.name === "NotFoundError")
+    return "A camera or microphone was not found on this device.";
+  if (error instanceof DOMException && error.name === "NotReadableError")
+    return "The camera or microphone is already in use by another application.";
+  if (error instanceof Error && error.message === "Signaling is disconnected")
+    return "The call could not start because realtime signaling is disconnected.";
+  return "The camera or microphone could not be started. Please try again.";
+};
+
+export const mediaConstraintsForCall = (
+  callType: CallType,
+): MediaStreamConstraints => ({
+  audio: true,
+  video:
+    callType === "video"
+      ? {
+          facingMode: "user",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        }
+      : false,
+});
+
 export function useVoiceCall(
   socketRef: React.RefObject<WebSocket | null>,
   currentUserId: string,
@@ -164,6 +251,14 @@ export function useVoiceCall(
   const queuedCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const acceptedLocallyRef = useRef(false);
   const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    voiceDebug("diagnostics-enabled", {
+      origin: window.location.origin,
+      secureContext: window.isSecureContext,
+      currentUserId,
+    });
+  }, [currentUserId]);
 
   const updateView = useCallback(
     (update: (current: VoiceCallView) => VoiceCallView) =>
@@ -194,6 +289,7 @@ export function useVoiceCall(
     if (connection) {
       connection.onicecandidate = null;
       connection.ontrack = null;
+      connection.oniceconnectionstatechange = null;
       connection.onconnectionstatechange = null;
       connection.close();
       peerConnectionRef.current = null;
@@ -209,6 +305,11 @@ export function useVoiceCall(
     }
     queuedCandidatesRef.current = [];
     acceptedLocallyRef.current = false;
+    setView((current) => ({
+      ...current,
+      localStream: null,
+      remoteStream: null,
+    }));
   }, []);
 
   const finishLocally = useCallback(
@@ -227,30 +328,42 @@ export function useVoiceCall(
         direction: current?.direction ?? viewState.direction,
         message,
         muted: false,
+        cameraOff: false,
         speakerOn: true,
       }));
     },
     [releaseMedia, updateView],
   );
 
-  const requestMicrophone = useCallback(async () => {
-    if (!window.isSecureContext && window.location.hostname !== "localhost")
-      throw new DOMException("Secure context required", "SecurityError");
-    if (!navigator.mediaDevices?.getUserMedia)
-      throw new DOMException("Microphone is unavailable", "NotFoundError");
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: false,
-    });
-    localStreamRef.current = stream;
-    return stream;
-  }, []);
+  const requestMedia = useCallback(
+    async (callType: CallType) => {
+      if (!window.isSecureContext && window.location.hostname !== "localhost")
+        throw new DOMException("Secure context required", "SecurityError");
+      if (!navigator.mediaDevices?.getUserMedia)
+        throw new DOMException("Microphone is unavailable", "NotFoundError");
+      const stream = await navigator.mediaDevices.getUserMedia(
+        mediaConstraintsForCall(callType),
+      );
+      voiceDebug("microphone-ready", {
+        audioTracks: stream.getAudioTracks().map(trackDetails),
+        videoTracks: stream.getVideoTracks().map(trackDetails),
+      });
+      localStreamRef.current = stream;
+      updateView((current) => ({ ...current, localStream: stream }));
+      return stream;
+    },
+    [updateView],
+  );
 
   const createConnection = useCallback(
     (call: CallContext) => {
       if (peerConnectionRef.current) return peerConnectionRef.current;
       const connection = new RTCPeerConnection(peerConnectionConfig);
       peerConnectionRef.current = connection;
+      voiceDebug("peer-connection-created", {
+        direction: call.direction,
+        signalingState: connection.signalingState,
+      });
       connection.onicecandidate = (event) => {
         if (!event.candidate || callRef.current?.callId !== call.callId) return;
         sendSignal({
@@ -262,16 +375,41 @@ export function useVoiceCall(
       connection.ontrack = (event) => {
         const stream = event.streams[0] ?? new MediaStream([event.track]);
         remoteStreamRef.current = stream;
-        if (!remoteAudioRef.current) {
+        updateView((current) => ({ ...current, remoteStream: stream }));
+        voiceDebug("remote-track", {
+          track: trackDetails(event.track),
+          streamAudioTracks: stream.getAudioTracks().map(trackDetails),
+        });
+        if (call.callType === "voice" && !remoteAudioRef.current) {
           const audio = new Audio();
           audio.autoplay = true;
+          audio.setAttribute("playsinline", "");
           remoteAudioRef.current = audio;
         }
-        remoteAudioRef.current.srcObject = stream;
-        remoteAudioRef.current.muted = false;
-        void remoteAudioRef.current.play().catch(() => undefined);
+        if (call.callType === "voice" && remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = stream;
+          remoteAudioRef.current.muted = false;
+          void remoteAudioRef.current
+            .play()
+            .then(() => voiceDebug("remote-audio-playing", { paused: false }))
+            .catch((error: unknown) =>
+              voiceDebug("remote-audio-play-failed", {
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
+        }
       };
+      connection.oniceconnectionstatechange = () =>
+        voiceDebug("ice-state", {
+          iceConnectionState: connection.iceConnectionState,
+          connectionState: connection.connectionState,
+          signalingState: connection.signalingState,
+        });
       connection.onconnectionstatechange = () => {
+        voiceDebug("connection-state", {
+          connectionState: connection.connectionState,
+          iceConnectionState: connection.iceConnectionState,
+        });
         if (callRef.current?.callId !== call.callId) return;
         if (connection.connectionState === "connected") {
           if (disconnectTimerRef.current)
@@ -311,7 +449,11 @@ export function useVoiceCall(
   }, []);
 
   const startCall = useCallback(
-    async (peer: CallPeer, peerOnline: boolean) => {
+    async (
+      peer: CallPeer,
+      peerOnline: boolean,
+      callType: CallType = "voice",
+    ) => {
       if (!["idle", "ended", "rejected", "failed"].includes(phaseRef.current))
         return;
       if (!peerOnline) {
@@ -329,6 +471,7 @@ export function useVoiceCall(
         callId: crypto.randomUUID(),
         peer,
         direction: "outgoing",
+        callType,
         remoteOffer: null,
       };
       callRef.current = call;
@@ -338,25 +481,32 @@ export function useVoiceCall(
         callId: call.callId,
         peer,
         direction: "outgoing",
-        message: "Requesting microphone…",
+        callType,
+        message:
+          callType === "video"
+            ? "Requesting camera and microphone…"
+            : "Requesting microphone…",
       }));
       try {
-        const stream = await requestMicrophone();
+        const stream = await requestMedia(callType);
         if (callRef.current?.callId !== call.callId) {
           for (const track of stream.getTracks()) track.stop();
           return;
         }
         const connection = createConnection(call);
-        for (const track of stream.getTracks())
-          connection.addTrack(track, stream);
+        addLocalTracks(connection, stream);
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
+        voiceDebug("local-offer", {
+          audioDirection: audioDirectionFromSdp(offer.sdp),
+        });
         if (
           !sendSignal({
             type: "call.offer",
             callId: call.callId,
             calleeId: peer.id,
             sdp: offer.sdp ?? "",
+            callType,
           })
         )
           throw new Error("Signaling is disconnected");
@@ -366,14 +516,15 @@ export function useVoiceCall(
           message: "Calling…",
         }));
       } catch (error) {
-        finishLocally("failed", microphoneError(error));
+        if (callRef.current?.callId !== call.callId) return;
+        finishLocally("failed", mediaPermissionError(error, callType));
       }
     },
     [
       createConnection,
       finishLocally,
       releaseMedia,
-      requestMicrophone,
+      requestMedia,
       sendSignal,
       updateView,
     ],
@@ -394,21 +545,28 @@ export function useVoiceCall(
       message: "Connecting…",
     }));
     try {
-      const stream = await requestMicrophone();
+      const stream = await requestMedia(call.callType);
       if (callRef.current?.callId !== call.callId) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
       const connection = createConnection(call);
-      for (const track of stream.getTracks())
-        connection.addTrack(track, stream);
       await connection.setRemoteDescription({
         type: "offer",
         sdp: call.remoteOffer ?? "",
       });
+      voiceDebug("remote-offer", {
+        audioDirection: audioDirectionFromSdp(call.remoteOffer),
+      });
       await flushCandidates();
+      // Apply the offer before adding the callee microphone so Firefox and
+      // Chromium reuse the negotiated audio transceiver consistently.
+      addLocalTracks(connection, stream);
       const answer = await connection.createAnswer();
       await connection.setLocalDescription(answer);
+      voiceDebug("local-answer", {
+        audioDirection: audioDirectionFromSdp(answer.sdp),
+      });
       if (
         !sendSignal({
           type: "call.answer",
@@ -418,14 +576,15 @@ export function useVoiceCall(
       )
         throw new Error("Signaling is disconnected");
     } catch (error) {
+      if (callRef.current?.callId !== call.callId) return;
       sendSignal({ type: "call.reject", callId: call.callId });
-      finishLocally("failed", microphoneError(error));
+      finishLocally("failed", mediaPermissionError(error, call.callType));
     }
   }, [
     createConnection,
     finishLocally,
     flushCandidates,
-    requestMicrophone,
+    requestMedia,
     sendSignal,
     updateView,
   ]);
@@ -464,6 +623,14 @@ export function useVoiceCall(
     });
   }, [updateView]);
 
+  const toggleCamera = useCallback(() => {
+    const tracks = localStreamRef.current?.getVideoTracks() ?? [];
+    if (!tracks.length) return;
+    const cameraOff = tracks.some((track) => track.enabled);
+    for (const track of tracks) track.enabled = !cameraOff;
+    updateView((current) => ({ ...current, cameraOff }));
+  }, [updateView]);
+
   const dismissCall = useCallback(() => {
     if (!["ended", "rejected", "failed"].includes(phaseRef.current)) return;
     setView(initialView);
@@ -482,6 +649,7 @@ export function useVoiceCall(
           callId: signal.callId,
           peer: signal.caller,
           direction: "incoming",
+          callType: signal.callType,
           remoteOffer: signal.sdp,
         };
         callRef.current = call;
@@ -491,7 +659,11 @@ export function useVoiceCall(
           callId: call.callId,
           peer: call.peer,
           direction: "incoming",
-          message: "Incoming Voice Call",
+          callType: signal.callType,
+          message:
+            signal.callType === "video"
+              ? "Incoming Video Call"
+              : "Incoming Voice Call",
         }));
         return true;
       }
@@ -503,7 +675,7 @@ export function useVoiceCall(
             ? `${call.peer.username} is currently offline.`
             : signal.reason === "busy"
               ? `${call.peer.username} is busy on another call.`
-              : "Voice calls are only available between friends.";
+              : `${call.callType === "video" ? "Video" : "Voice"} calls are only available between friends.`;
         finishLocally("failed", message);
         return true;
       }
@@ -539,6 +711,17 @@ export function useVoiceCall(
           await connection.setRemoteDescription({
             type: "answer",
             sdp: signal.sdp,
+          });
+          voiceDebug("remote-answer", {
+            audioDirection: audioDirectionFromSdp(signal.sdp),
+            transceivers: connection.getTransceivers().map((transceiver) => ({
+              direction: transceiver.direction,
+              currentDirection: transceiver.currentDirection,
+              senderTrack: transceiver.sender.track
+                ? trackDetails(transceiver.sender.track)
+                : null,
+              receiverTrack: trackDetails(transceiver.receiver.track),
+            })),
           });
           await flushCandidates();
         } catch {
@@ -604,6 +787,7 @@ export function useVoiceCall(
     endCall,
     toggleMute,
     toggleSpeaker,
+    toggleCamera,
     dismissCall,
     handleSignal,
     handleSignalingDisconnect,

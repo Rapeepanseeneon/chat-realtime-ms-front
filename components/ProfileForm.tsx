@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 import type { ProfileLink } from "../lib/chat-types";
+import { getApiBaseUrl } from "../lib/runtime-config";
 import { ThemeControl } from "./ThemeControl";
 import { UserAvatar } from "./UserAvatar";
 
@@ -12,7 +13,7 @@ type ProfileFormProps = {
   bio: string;
   avatarUrl: string | null;
 };
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const apiBaseUrl = getApiBaseUrl();
 const emptyLink = (): ProfileLink => ({
   platform: "Website",
   label: "",

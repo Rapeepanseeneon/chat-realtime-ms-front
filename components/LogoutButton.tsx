@@ -2,8 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { getApiBaseUrl } from "../lib/runtime-config";
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const apiBaseUrl = getApiBaseUrl();
 
 export function LogoutButton({ className = "" }: { className?: string }) {
   const router = useRouter();

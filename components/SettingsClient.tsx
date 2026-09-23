@@ -4,13 +4,14 @@ import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
 import type { CurrentUser } from "../lib/auth";
 import type { UserSettings } from "../lib/chat-types";
+import { getApiBaseUrl } from "../lib/runtime-config";
 import { BrandLogo } from "./BrandLogo";
 import { LogoutButton } from "./LogoutButton";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { ThemeControl } from "./ThemeControl";
 import { UserAvatar } from "./UserAvatar";
 
-const api = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const api = getApiBaseUrl();
 const categories = [
   ["account", "Account", "👤"],
   ["appearance", "Appearance", "◐"],

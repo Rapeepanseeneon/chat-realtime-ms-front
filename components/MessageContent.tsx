@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import type { MessageAttachment } from "../lib/chat-types";
+import { getApiBaseUrl } from "../lib/runtime-config";
 
-const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "") ?? "";
+const apiBaseUrl = getApiBaseUrl();
 const urlPattern = /(https?:\/\/[^\s<>"']+)/gi;
 
 const safeUrl = (value: string) => {

@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import type { ChatUser, PublicProfile } from "../lib/chat-types";
+import { getApiBaseUrl } from "../lib/runtime-config";
 import { UserAvatar } from "./UserAvatar";
 
-const api = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const api = getApiBaseUrl();
 export function ProfileViewer({
   user,
   onClose,

@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type { FriendRequest, FriendSearchResult } from "../lib/chat-types";
+import { getApiBaseUrl } from "../lib/runtime-config";
 
 type FriendManagerProps = {
   isOpen: boolean;
@@ -16,7 +17,7 @@ type FriendManagerProps = {
   onFriendsChanged: () => void;
 };
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const apiBaseUrl = getApiBaseUrl();
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 

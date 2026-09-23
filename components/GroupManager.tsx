@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState, type FormEvent } from "react";
 import type { ChatFriend, ChatGroup, GroupInfo } from "../lib/chat-types";
+import { getApiBaseUrl } from "../lib/runtime-config";
 import { UserAvatar } from "./UserAvatar";
-const api = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const api = getApiBaseUrl();
 type Props = {
   isOpen: boolean;
   group: ChatGroup | null;
