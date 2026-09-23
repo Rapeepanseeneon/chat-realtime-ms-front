@@ -10,15 +10,17 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChatSidebar } from "../../components/ChatSidebar";
-import { BrandLogo } from "../../components/BrandLogo";
+import { AuthenticatedAppShell } from "../../components/app/AuthenticatedAppShell";
+import { ChatHeader } from "../../components/chat/ChatHeader";
+import { ConversationList } from "../../components/chat/ConversationList";
+import { ConversationPane } from "../../components/chat/ConversationPane";
+import { MessageComposer } from "../../components/chat/MessageComposer";
+import { MessageList } from "../../components/chat/MessageList";
 import { FriendManager } from "../../components/FriendManager";
 import { GroupManager } from "../../components/GroupManager";
 import { GroupMessageBubble } from "../../components/GroupMessageBubble";
 import { MessageBubble } from "../../components/MessageBubble";
-import { MobileBottomNav } from "../../components/MobileBottomNav";
 import { ProfileViewer } from "../../components/ProfileViewer";
-import { UserAvatar } from "../../components/UserAvatar";
 import { VoiceCallOverlay } from "../../components/VoiceCallOverlay";
 import type { GhostCommand } from "../../components/GhostMessage";
 import type {
@@ -42,6 +44,7 @@ import {
 } from "../../lib/chat-events";
 import { useChatTyping } from "../../lib/use-chat-typing";
 import { useVoiceCall } from "../../lib/use-voice-call";
+import { getApiBaseUrl, getWebSocketUrl } from "../../lib/runtime-config";
 
 type ConnectionStatus = "Connecting" | "Connected" | "Disconnected";
 type PendingAttachment =
@@ -58,8 +61,8 @@ type ChatClientProps = {
   };
 };
 
-const websocketUrl = process.env.NEXT_PUBLIC_WS_URL?.trim();
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+const websocketUrl = getWebSocketUrl();
+const apiBaseUrl = getApiBaseUrl();
 const defaultSettings: UserSettings = {
   presenceStatus: "online",
   customStatus: "",
@@ -1368,11 +1371,11 @@ export function ChatClient({ currentUser }: ChatClientProps) {
   const displayedError = friendsError ?? historyError ?? connectionError;
 
   return (
-    <main className="chat-shell">
+    <AuthenticatedAppShell className="chat-shell">
       <div
         className={`chat-layout${selectedUser || selectedGroup ? " mobile-conversation-active" : ""}`}
       >
-        <ChatSidebar
+        <ConversationList
           username={currentUser.username}
           bio={currentUser.bio}
           avatarUrl={currentUser.avatarUrl}
@@ -1422,495 +1425,402 @@ export function ChatClient({ currentUser }: ChatClientProps) {
           onReject={voiceCall.rejectCall}
           onEnd={voiceCall.endCall}
           onMute={voiceCall.toggleMute}
+          onCamera={voiceCall.toggleCamera}
           onSpeaker={voiceCall.toggleSpeaker}
           onDismiss={voiceCall.dismissCall}
         />
-        <div className="chat-main">
-          <section className="chat-card" aria-labelledby="chat-title">
-            <header className="chat-header">
-              <div className="chat-title-block">
-                {selectedUser || selectedGroup ? (
-                  <button
-                    className="mobile-conversation-back"
-                    type="button"
-                    aria-label="Back to chats"
-                    onClick={showMobileChatList}
-                  >
-                    ←
-                  </button>
-                ) : null}
-                <div className="chat-brand">
-                  <BrandLogo decorative />
-                  <p className="eyebrow">Pb Messenger</p>
-                </div>
-                <div className="chat-title-line">
-                  {selectedUser ? (
-                    <UserAvatar
-                      username={selectedUser.username}
-                      avatarUrl={selectedUser.avatarUrl}
-                      className="chat-header-avatar"
-                    />
-                  ) : null}
-                  <h1
-                    id="chat-title"
-                    className={selectedGroup ? "group-header-action" : ""}
-                    onClick={() => {
-                      if (selectedGroup) {
-                        setGroupInfoTarget(selectedGroup);
-                        setGroupManagerOpen(true);
-                      }
-                    }}
-                  >
-                    {selectedGroup?.name ??
-                      selectedUser?.username ??
-                      "Pb Messenger"}
-                  </h1>
-                </div>
-                {selectedGroup ? (
-                  <button
-                    className="group-info-button"
-                    type="button"
-                    onClick={() => {
-                      setGroupInfoTarget(selectedGroup);
-                      setGroupManagerOpen(true);
-                    }}
-                  >
-                    👥 {selectedGroup.memberCount} members · Group info
-                  </button>
-                ) : null}
-                {selectedUser ? (
-                  <div className="chat-person-meta">
-                    <p className="chat-presence">
-                      <span
-                        className={`presence-dot presence-dot-${selectedStatus}`}
-                        aria-hidden="true"
-                      />
-                      <span>
-                        {selectedStatus === "dnd"
-                          ? "Do Not Disturb"
-                          : selectedStatus.charAt(0).toUpperCase() +
-                            selectedStatus.slice(1)}
-                        {selectedCustomStatus
-                          ? ` · ${selectedCustomStatus}`
-                          : ""}
-                      </span>
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setProfileTarget(selectedUser)}
-                    >
-                      View profile
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-              <div className="chat-header-actions">
-                {selectedUser ? (
-                  <button
-                    className="voice-call-button"
-                    type="button"
-                    onClick={() =>
-                      void voiceCall.startCall(
-                        selectedUser,
-                        selectedStatus !== "offline",
-                      )
-                    }
-                    disabled={status !== "Connected" || voiceCall.active}
-                    aria-label={`Voice call ${selectedUser.username}`}
-                  >
-                    <span aria-hidden="true">📞</span>
-                    Voice Call
-                  </button>
-                ) : null}
-                <div className={`status status-${status.toLowerCase()}`}>
-                  <span aria-hidden="true" />
-                  {status}
-                </div>
-              </div>
-            </header>
+        <ConversationPane>
+          <ChatHeader
+            selectedUser={selectedUser}
+            selectedGroup={selectedGroup}
+            selectedStatus={selectedStatus}
+            selectedCustomStatus={selectedCustomStatus}
+            connectionStatus={status}
+            callActive={voiceCall.active}
+            onBack={showMobileChatList}
+            onOpenGroup={(group) => {
+              setGroupInfoTarget(group);
+              setGroupManagerOpen(true);
+            }}
+            onViewProfile={setProfileTarget}
+            onStartCall={(callType) => {
+              if (selectedUser)
+                void voiceCall.startCall(
+                  selectedUser,
+                  selectedStatus !== "offline",
+                  callType,
+                );
+            }}
+          />
 
-            <div
-              ref={messageAreaRef}
-              className="messages private-messages"
-              aria-live="polite"
-              aria-label={selectedGroup ? "Group messages" : "Private messages"}
-              onScroll={(event) => {
-                const element = event.currentTarget;
-                nearBottomRef.current =
-                  element.scrollHeight -
-                    element.scrollTop -
-                    element.clientHeight <
-                  96;
-                if (nearBottomRef.current) setHasNewMessages(false);
-              }}
-            >
-              {!selectedUser && !selectedGroup ? (
+          <MessageList
+            containerRef={messageAreaRef}
+            label={selectedGroup ? "Group messages" : "Private messages"}
+            hasNewMessages={hasNewMessages}
+            onJumpToLatest={() => scrollToLatest()}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              nearBottomRef.current =
+                element.scrollHeight -
+                  element.scrollTop -
+                  element.clientHeight <
+                96;
+              if (nearBottomRef.current) setHasNewMessages(false);
+            }}
+          >
+            {!selectedUser && !selectedGroup ? (
+              <div className="empty-state">
+                <p>Select a chat to start messaging</p>
+                <span>Choose a friend or group from the sidebar.</span>
+              </div>
+            ) : selectedGroup ? (
+              historyLoading && groupMessages.length === 0 ? (
                 <div className="empty-state">
-                  <p>Select a chat to start messaging</p>
-                  <span>Choose a friend or group from the sidebar.</span>
+                  <p>Loading group…</p>
                 </div>
-              ) : selectedGroup ? (
-                historyLoading && groupMessages.length === 0 ? (
-                  <div className="empty-state">
-                    <p>Loading group…</p>
-                  </div>
-                ) : groupMessages.length === 0 ? (
-                  <div className="empty-state">
-                    <p>No group messages yet</p>
-                  </div>
-                ) : (
-                  groupMessages.map((message) => (
-                    <GroupMessageBubble
-                      key={message.id}
-                      message={message}
-                      currentUserId={currentUser.id}
-                      disabled={status !== "Connected" || editPending}
-                      onReply={startGroupReply}
-                      onEdit={startGroupEdit}
-                      onDelete={deleteGroupMessage}
-                    />
-                  ))
-                )
-              ) : historyLoading && messages.length === 0 ? (
+              ) : groupMessages.length === 0 ? (
                 <div className="empty-state">
-                  <p>Loading conversation…</p>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="empty-state">
-                  <p>No messages yet</p>
-                  <span>
-                    Start a private conversation with {selectedUser!.username}.
-                  </span>
+                  <p>No group messages yet</p>
                 </div>
               ) : (
-                messages.map((message) => (
-                  <MessageBubble
+                groupMessages.map((message) => (
+                  <GroupMessageBubble
                     key={message.id}
                     message={message}
                     currentUserId={currentUser.id}
-                    friendName={selectedUser!.username}
-                    showReceipt={message.id === lastOwnMessageId}
-                    disabled={
-                      status !== "Connected" ||
-                      editPending ||
-                      deletingId !== null ||
-                      ghostBusyId !== null ||
-                      ghostCreating
-                    }
-                    onReply={startReply}
-                    onEdit={startEdit}
-                    onDelete={deleteMessage}
-                    onGhostCommand={sendGhostCommand}
+                    disabled={status !== "Connected" || editPending}
+                    onReply={startGroupReply}
+                    onEdit={startGroupEdit}
+                    onDelete={deleteGroupMessage}
                   />
                 ))
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-            {hasNewMessages ? (
-              <button
-                className="new-message-button"
-                type="button"
-                onClick={() => scrollToLatest()}
-              >
-                New messages ↓
-              </button>
-            ) : null}
-
-            <p className="chat-typing" role="status">
-              {selectedGroup && Object.keys(groupTypingUsers).length
-                ? `${Object.values(groupTypingUsers).slice(0, 2).join(" and ")}${Object.keys(groupTypingUsers).length > 2 ? " and others" : ""} ${Object.keys(groupTypingUsers).length === 1 ? "is" : "are"} typing…`
-                : selectedUser && typingByUser[selectedUser.id]
-                  ? `${selectedUser.username} is typing…`
-                  : ""}
-            </p>
-
-            {displayedError ? (
-              <p className="error-message" role="alert">
-                {displayedError}
-              </p>
-            ) : null}
-
-            <form
-              className={`message-form${editingId || groupEditingId ? " message-form-editing" : ""}`}
-              onSubmit={sendMessage}
-            >
-              {pendingAttachment ? (
-                <div className="composer-attachment-preview" role="status">
-                  {pendingAttachment.kind === "image" &&
-                  pendingAttachment.previewUrl ? (
-                    <img
-                      src={pendingAttachment.previewUrl}
-                      alt={`Preview ${pendingAttachment.file.name}`}
-                    />
-                  ) : (
-                    <span
-                      className="composer-attachment-icon"
-                      aria-hidden="true"
-                    >
-                      {pendingAttachment.kind === "file" ? "📎" : "📍"}
-                    </span>
-                  )}
-                  <div>
-                    <strong>
-                      {pendingAttachment.kind === "location"
-                        ? "Current location"
-                        : pendingAttachment.file.name}
-                    </strong>
-                    <small>
-                      {pendingAttachment.kind === "location"
-                        ? `${pendingAttachment.latitude.toFixed(5)}, ${pendingAttachment.longitude.toFixed(5)}`
-                        : `${(pendingAttachment.file.size / 1024).toFixed(1)} KB`}
-                    </small>
-                    {uploadingAttachment ? (
-                      <span className="upload-progress">
-                        <span style={{ width: `${uploadProgress}%` }} />
-                      </span>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="Cancel attachment"
-                    disabled={uploadingAttachment}
-                    onClick={clearPendingAttachment}
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : null}
-              {linkEntryOpen ? (
-                <div className="composer-link-entry">
-                  <label>
-                    <span>Paste a link</span>
-                    <input
-                      autoFocus
-                      type="url"
-                      inputMode="url"
-                      value={linkValue}
-                      placeholder="https://example.com"
-                      onChange={(event) => setLinkValue(event.target.value)}
-                    />
-                  </label>
-                  <button type="button" onClick={addLinkToComposer}>
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLinkEntryOpen(false);
-                      setLinkValue("");
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : null}
-              {replyId || editingId || groupReplyId || groupEditingId ? (
-                <div className="composer-context" role="status">
-                  <div>
-                    <strong>
-                      {editingId || groupEditingId
-                        ? "Editing message"
-                        : "Replying to " +
-                          (replyMessage?.senderId === currentUser.id
-                            ? "yourself"
-                            : selectedGroup
-                              ? groupReply?.senderUsername
-                              : selectedUser?.username)}
-                    </strong>
-                    <span>
-                      {editingId || groupEditingId
-                        ? (editingMessage?.messageText ??
-                          groupEditing?.messageText)
-                        : replyMessage?.deletedAt
-                          ? "This message was deleted"
-                          : (replyMessage?.messageText ??
-                            (groupReply?.deletedAt
-                              ? "This message was deleted"
-                              : groupReply?.messageText))}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="composer-cancel"
-                    disabled={editPending}
-                    onClick={cancelComposerAction}
-                    aria-label={
-                      editingId || groupEditingId
-                        ? "Cancel editing"
-                        : "Cancel reply"
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : null}
-              {!editingId && !groupEditingId ? (
-                <div className="attachment-menu-wrap">
-                  <button
-                    className="attachment-menu-button"
-                    type="button"
-                    aria-label="Add attachment"
-                    aria-expanded={attachmentMenuOpen}
-                    disabled={
-                      (!selectedUser && !selectedGroup) ||
-                      uploadingAttachment ||
-                      ghostCreating
-                    }
-                    onClick={() => setAttachmentMenuOpen((open) => !open)}
-                  >
-                    +
-                  </button>
-                  {attachmentMenuOpen ? (
-                    <div className="attachment-menu" role="menu">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => photoInputRef.current?.click()}
-                      >
-                        🖼 Photo
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        📎 File
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setLinkEntryOpen(true);
-                          setAttachmentMenuOpen(false);
-                        }}
-                      >
-                        🔗 Link
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        disabled={locating}
-                        onClick={requestCurrentLocation}
-                      >
-                        📍 {locating ? "Locating…" : "Location"}
-                      </button>
-                    </div>
-                  ) : null}
-                  <input
-                    ref={photoInputRef}
-                    className="visually-hidden"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    onChange={(event) => chooseAttachment(event, "image")}
-                  />
-                  <input
-                    ref={fileInputRef}
-                    className="visually-hidden"
-                    type="file"
-                    accept=".pdf,.txt,.csv,.zip,.docx,.xlsx,.pptx"
-                    onChange={(event) => chooseAttachment(event, "file")}
-                  />
-                </div>
-              ) : null}
-              <label className="field message-field">
+              )
+            ) : historyLoading && messages.length === 0 ? (
+              <div className="empty-state">
+                <p>Loading conversation…</p>
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="empty-state">
+                <p>No messages yet</p>
                 <span>
-                  {selectedGroup
-                    ? `Message ${selectedGroup.name}`
-                    : selectedUser
-                      ? `Message ${selectedUser.username}`
-                      : "Select a friend to start chatting"}
+                  Start a private conversation with {selectedUser!.username}.
                 </span>
-                <textarea
-                  rows={1}
-                  value={text}
-                  onChange={(event) => {
-                    setText(event.target.value);
-                    if (selectedGroup) updateGroupTyping(event.target.value);
-                    else if (selectedUser)
-                      updateTyping(selectedUser.id, event.target.value);
-                  }}
-                  onBlur={() => {
-                    if (selectedGroup)
-                      socketRef.current?.send(
-                        JSON.stringify({
-                          type: "group.typing.stop",
-                          groupId: selectedGroup.id,
-                        }),
-                      );
-                    else stopTyping();
-                  }}
-                  onKeyDown={handleComposerKeyDown}
-                  placeholder={
-                    selectedGroup
-                      ? "Type a group message…"
-                      : selectedUser
-                        ? "Type a private message…"
-                        : "Select a friend first"
-                  }
-                  maxLength={1_000}
-                  disabled={
-                    (!selectedUser && !selectedGroup) ||
-                    editPending ||
-                    ghostCreating ||
-                    uploadingAttachment
-                  }
-                />
-              </label>
-              {!editingId && !groupEditingId ? (
-                <button
-                  type="button"
-                  className="ghost-create-button"
-                  aria-label={
-                    ghostCreating
-                      ? "Creating Ghost message"
-                      : "Create Ghost message — only you can see it"
-                  }
-                  title="Create Ghost message — only you can see it"
+              </div>
+            ) : (
+              messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  currentUserId={currentUser.id}
+                  friendName={selectedUser!.username}
+                  showReceipt={message.id === lastOwnMessageId}
                   disabled={
                     status !== "Connected" ||
-                    !selectedUser ||
-                    selectedGroup !== null ||
-                    !text.trim() ||
-                    ghostCreating ||
-                    pendingAttachment !== null ||
-                    uploadingAttachment
+                    editPending ||
+                    deletingId !== null ||
+                    ghostBusyId !== null ||
+                    ghostCreating
                   }
-                  onClick={() => sendCurrentMessage(true)}
+                  onReply={startReply}
+                  onEdit={startEdit}
+                  onDelete={deleteMessage}
+                  onGhostCommand={sendGhostCommand}
+                />
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </MessageList>
+
+          <p className="chat-typing" role="status">
+            {selectedGroup && Object.keys(groupTypingUsers).length
+              ? `${Object.values(groupTypingUsers).slice(0, 2).join(" and ")}${Object.keys(groupTypingUsers).length > 2 ? " and others" : ""} ${Object.keys(groupTypingUsers).length === 1 ? "is" : "are"} typing…`
+              : selectedUser && typingByUser[selectedUser.id]
+                ? `${selectedUser.username} is typing…`
+                : ""}
+          </p>
+
+          {displayedError ? (
+            <p className="error-message" role="alert">
+              {displayedError}
+            </p>
+          ) : null}
+
+          <MessageComposer
+            editing={Boolean(editingId || groupEditingId)}
+            onSubmit={sendMessage}
+          >
+            {pendingAttachment ? (
+              <div className="composer-attachment-preview" role="status">
+                {pendingAttachment.kind === "image" &&
+                pendingAttachment.previewUrl ? (
+                  <img
+                    src={pendingAttachment.previewUrl}
+                    alt={`Preview ${pendingAttachment.file.name}`}
+                  />
+                ) : (
+                  <span className="composer-attachment-icon" aria-hidden="true">
+                    {pendingAttachment.kind === "file" ? "📎" : "📍"}
+                  </span>
+                )}
+                <div>
+                  <strong>
+                    {pendingAttachment.kind === "location"
+                      ? "Current location"
+                      : pendingAttachment.file.name}
+                  </strong>
+                  <small>
+                    {pendingAttachment.kind === "location"
+                      ? `${pendingAttachment.latitude.toFixed(5)}, ${pendingAttachment.longitude.toFixed(5)}`
+                      : `${(pendingAttachment.file.size / 1024).toFixed(1)} KB`}
+                  </small>
+                  {uploadingAttachment ? (
+                    <span className="upload-progress">
+                      <span style={{ width: `${uploadProgress}%` }} />
+                    </span>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Cancel attachment"
+                  disabled={uploadingAttachment}
+                  onClick={clearPendingAttachment}
                 >
-                  <span aria-hidden="true">{ghostCreating ? "…" : "👻"}</span>
+                  ×
                 </button>
-              ) : null}
-              <button
-                type="submit"
-                className="composer-send"
-                aria-label={
-                  editingId || groupEditingId ? "Save message" : "Send message"
+              </div>
+            ) : null}
+            {linkEntryOpen ? (
+              <div className="composer-link-entry">
+                <label>
+                  <span>Paste a link</span>
+                  <input
+                    autoFocus
+                    type="url"
+                    inputMode="url"
+                    value={linkValue}
+                    placeholder="https://example.com"
+                    onChange={(event) => setLinkValue(event.target.value)}
+                  />
+                </label>
+                <button type="button" onClick={addLinkToComposer}>
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLinkEntryOpen(false);
+                    setLinkValue("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : null}
+            {replyId || editingId || groupReplyId || groupEditingId ? (
+              <div className="composer-context" role="status">
+                <div>
+                  <strong>
+                    {editingId || groupEditingId
+                      ? "Editing message"
+                      : "Replying to " +
+                        (replyMessage?.senderId === currentUser.id
+                          ? "yourself"
+                          : selectedGroup
+                            ? groupReply?.senderUsername
+                            : selectedUser?.username)}
+                  </strong>
+                  <span>
+                    {editingId || groupEditingId
+                      ? (editingMessage?.messageText ??
+                        groupEditing?.messageText)
+                      : replyMessage?.deletedAt
+                        ? "This message was deleted"
+                        : (replyMessage?.messageText ??
+                          (groupReply?.deletedAt
+                            ? "This message was deleted"
+                            : groupReply?.messageText))}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="composer-cancel"
+                  disabled={editPending}
+                  onClick={cancelComposerAction}
+                  aria-label={
+                    editingId || groupEditingId
+                      ? "Cancel editing"
+                      : "Cancel reply"
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+            {!editingId && !groupEditingId ? (
+              <div className="attachment-menu-wrap">
+                <button
+                  className="attachment-menu-button"
+                  type="button"
+                  aria-label="Add attachment"
+                  aria-expanded={attachmentMenuOpen}
+                  disabled={
+                    (!selectedUser && !selectedGroup) ||
+                    uploadingAttachment ||
+                    ghostCreating
+                  }
+                  onClick={() => setAttachmentMenuOpen((open) => !open)}
+                >
+                  +
+                </button>
+                {attachmentMenuOpen ? (
+                  <div className="attachment-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => photoInputRef.current?.click()}
+                    >
+                      🖼 Photo
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      📎 File
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setLinkEntryOpen(true);
+                        setAttachmentMenuOpen(false);
+                      }}
+                    >
+                      🔗 Link
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={locating}
+                      onClick={requestCurrentLocation}
+                    >
+                      📍 {locating ? "Locating…" : "Location"}
+                    </button>
+                  </div>
+                ) : null}
+                <input
+                  ref={photoInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={(event) => chooseAttachment(event, "image")}
+                />
+                <input
+                  ref={fileInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept=".pdf,.txt,.csv,.zip,.docx,.xlsx,.pptx"
+                  onChange={(event) => chooseAttachment(event, "file")}
+                />
+              </div>
+            ) : null}
+            <label className="field message-field">
+              <span>
+                {selectedGroup
+                  ? `Message ${selectedGroup.name}`
+                  : selectedUser
+                    ? `Message ${selectedUser.username}`
+                    : "Select a friend to start chatting"}
+              </span>
+              <textarea
+                rows={1}
+                value={text}
+                onChange={(event) => {
+                  setText(event.target.value);
+                  if (selectedGroup) updateGroupTyping(event.target.value);
+                  else if (selectedUser)
+                    updateTyping(selectedUser.id, event.target.value);
+                }}
+                onBlur={() => {
+                  if (selectedGroup)
+                    socketRef.current?.send(
+                      JSON.stringify({
+                        type: "group.typing.stop",
+                        groupId: selectedGroup.id,
+                      }),
+                    );
+                  else stopTyping();
+                }}
+                onKeyDown={handleComposerKeyDown}
+                placeholder={
+                  selectedGroup
+                    ? "Type a group message…"
+                    : selectedUser
+                      ? "Type a private message…"
+                      : "Select a friend first"
                 }
-                title={
-                  editingId || groupEditingId ? "Save message" : "Send message"
-                }
+                maxLength={1_000}
                 disabled={
-                  status !== "Connected" ||
                   (!selectedUser && !selectedGroup) ||
-                  (!text.trim() && !pendingAttachment) ||
                   editPending ||
                   ghostCreating ||
                   uploadingAttachment
                 }
+              />
+            </label>
+            {!editingId && !groupEditingId ? (
+              <button
+                type="button"
+                className="ghost-create-button"
+                aria-label={
+                  ghostCreating
+                    ? "Creating Ghost message"
+                    : "Create Ghost message — only you can see it"
+                }
+                title="Create Ghost message — only you can see it"
+                disabled={
+                  status !== "Connected" ||
+                  !selectedUser ||
+                  selectedGroup !== null ||
+                  !text.trim() ||
+                  ghostCreating ||
+                  pendingAttachment !== null ||
+                  uploadingAttachment
+                }
+                onClick={() => sendCurrentMessage(true)}
               >
-                {editPending || uploadingAttachment ? (
-                  "…"
-                ) : editingId || groupEditingId ? (
-                  "Save"
-                ) : (
-                  <span aria-hidden="true">➤</span>
-                )}
+                <span aria-hidden="true">{ghostCreating ? "…" : "👻"}</span>
               </button>
-            </form>
-          </section>
-        </div>
+            ) : null}
+            <button
+              type="submit"
+              className="composer-send"
+              aria-label={
+                editingId || groupEditingId ? "Save message" : "Send message"
+              }
+              title={
+                editingId || groupEditingId ? "Save message" : "Send message"
+              }
+              disabled={
+                status !== "Connected" ||
+                (!selectedUser && !selectedGroup) ||
+                (!text.trim() && !pendingAttachment) ||
+                editPending ||
+                ghostCreating ||
+                uploadingAttachment
+              }
+            >
+              {editPending || uploadingAttachment ? (
+                "…"
+              ) : editingId || groupEditingId ? (
+                "Save"
+              ) : (
+                <span aria-hidden="true">➤</span>
+              )}
+            </button>
+          </MessageComposer>
+        </ConversationPane>
       </div>
-      <MobileBottomNav />
-    </main>
+    </AuthenticatedAppShell>
   );
 }

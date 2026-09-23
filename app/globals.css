@@ -2,6 +2,45 @@
   --brand-primary: #08467f;
   --brand-primary-hover: #063363;
   --brand-accent: #06aaba;
+  --page: #eef2f7;
+  --surface: #ffffff;
+  --surface-soft: #f7f9fc;
+  --surface-muted: #eef2f7;
+  --text: #172033;
+  --text-muted: #697386;
+  --border: #dfe5ee;
+  --interactive-hover: color-mix(
+    in srgb,
+    var(--brand-accent) 11%,
+    var(--surface)
+  );
+  --interactive-focus: color-mix(in srgb, var(--brand-accent) 34%, transparent);
+  --shadow: rgba(26, 39, 67, 0.13);
+  --shadow-soft: 0 8px 24px rgba(26, 39, 67, 0.09);
+  --shadow-raised: 0 24px 64px rgba(26, 39, 67, 0.16);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --font-size-sm: 0.8rem;
+  --font-size-body: 1rem;
+  --font-size-title: clamp(1.4rem, 2vw, 2rem);
+  --motion-fast: 120ms;
+  --motion-normal: 180ms;
+  --motion-slow: 260ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --conversation-list-compact: 240px;
+  --conversation-list-tablet: clamp(232px, 30vw, 280px);
+  --conversation-list-desktop: 360px;
+  --conversation-list-wide: 392px;
+  --chat-content-max: 1600px;
   color-scheme: light;
   font-family:
     Inter,
@@ -13,6 +52,14 @@
     sans-serif;
   background: #f5f7fb;
   color: #172033;
+}
+
+[data-visual-effects="reduced"] {
+  --motion-fast: 1ms;
+  --motion-normal: 1ms;
+  --motion-slow: 1ms;
+  --shadow-soft: none;
+  --shadow-raised: none;
 }
 
 * {
@@ -363,14 +410,19 @@ h1 {
 
 .chat-shell {
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
   background: #eef1f7;
+}
+.app-shell {
+  min-width: 0;
 }
 .chat-layout {
   position: relative;
   height: 100vh;
   height: 100dvh;
   display: grid;
-  grid-template-columns: 392px minmax(0, 1fr);
+  grid-template-columns: var(--conversation-list-desktop) minmax(0, 1fr);
   overflow: hidden;
 }
 .chat-sidebar {
@@ -920,6 +972,7 @@ h1 {
 }
 .chat-card {
   width: 100%;
+  max-width: var(--chat-content-max);
   min-width: 0;
   height: 100%;
   min-height: 0;
@@ -1250,13 +1303,28 @@ h1 {
   outline-offset: 2px;
 }
 
-@media (max-width: 1100px) and (min-width: 761px) {
+@media (min-width: 768px) and (max-width: 1023px) {
   .chat-layout {
-    grid-template-columns: clamp(320px, 34vw, 360px) minmax(0, 1fr);
+    grid-template-columns: var(--conversation-list-tablet) minmax(0, 1fr);
   }
 }
 
-@media (max-width: 760px) {
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .chat-layout {
+    grid-template-columns: var(--conversation-list-compact) minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1920px) {
+  .chat-layout {
+    grid-template-columns: var(--conversation-list-wide) minmax(0, 1fr);
+  }
+  .chat-card {
+    justify-self: center;
+  }
+}
+
+@media (max-width: 767px) {
   html,
   body,
   .chat-shell,
@@ -1792,7 +1860,7 @@ h1 {
   display: none;
 }
 
-@media (max-width: 1020px) and (min-width: 761px) {
+@media (max-width: 1023px) and (min-width: 768px) {
   .settings-shell {
     grid-template-columns: 220px 210px minmax(0, 1fr);
   }
@@ -1804,7 +1872,7 @@ h1 {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .settings-shell {
     height: 100dvh;
     display: block;
@@ -1948,17 +2016,33 @@ h1 {
   }
 }
 
-/* Step 10 profile, quick access, message density and theme tokens */
-:root {
-  --surface: #ffffff;
-  --surface-soft: #f7f9fc;
-  --surface-muted: #eef2f7;
-  --page: #eef2f7;
-  --text: #172033;
-  --text-muted: #697386;
-  --border: #dfe5ee;
-  --shadow: rgba(26, 39, 67, 0.13);
+/* OS preference works now; a future setting can set data-visual-effects. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 1ms;
+    --motion-normal: 1ms;
+    --motion-slow: 1ms;
+  }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
+
+[data-visual-effects="reduced"] *,
+[data-visual-effects="reduced"] *::before,
+[data-visual-effects="reduced"] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+}
+
+/* Shared light/dark surfaces. Component-level visual redesign comes later. */
 [data-theme="dark"] {
   color-scheme: dark;
   --surface: #151d2b;
@@ -1969,6 +2053,8 @@ h1 {
   --text-muted: #aab6c9;
   --border: #2e3b50;
   --shadow: rgba(0, 0, 0, 0.38);
+  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.24);
+  --shadow-raised: 0 24px 64px rgba(0, 0, 0, 0.42);
   background: var(--page);
   color: var(--text);
 }
@@ -2823,6 +2909,11 @@ h1,
   gap: 10px;
   flex: 0 0 auto;
 }
+.call-header-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .voice-call-button {
   min-height: 40px;
   display: inline-flex;
@@ -2880,6 +2971,51 @@ h1,
   color: var(--text);
   text-align: center;
   box-shadow: 0 28px 80px rgba(4, 18, 45, 0.3);
+}
+.voice-call-panel.video-call-panel {
+  width: min(100%, 820px);
+  min-height: min(680px, calc(100dvh - 40px));
+  justify-content: flex-start;
+  padding-top: 28px;
+}
+.video-call-stage {
+  position: relative;
+  width: 100%;
+  min-height: 360px;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #091327;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.video-call-remote {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  display: block;
+  object-fit: cover;
+  background: #091327;
+}
+.video-call-waiting {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.video-call-local {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: min(28%, 190px);
+  aspect-ratio: 3 / 4;
+  border: 2px solid rgba(255, 255, 255, 0.82);
+  border-radius: 16px;
+  background: #17233a;
+  object-fit: cover;
+  transform: scaleX(-1);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+}
+.video-call-local.camera-off {
+  opacity: 0.3;
 }
 .voice-call-pulse {
   position: absolute;
@@ -3055,6 +3191,9 @@ h1,
   .chat-header-actions {
     gap: 6px;
   }
+  .call-header-buttons {
+    gap: 4px;
+  }
   .voice-call-button {
     width: 42px;
     min-width: 42px;
@@ -3074,6 +3213,20 @@ h1,
     padding: 34px 18px 24px;
     border-radius: 24px;
   }
+  .voice-call-panel.video-call-panel {
+    min-height: 100%;
+    padding-top: 18px;
+  }
+  .video-call-stage,
+  .video-call-remote {
+    min-height: min(54dvh, 460px);
+  }
+  .video-call-local {
+    right: 10px;
+    bottom: 10px;
+    width: 30%;
+    border-radius: 12px;
+  }
   .voice-call-actions {
     gap: 9px;
   }
@@ -3081,5 +3234,66 @@ h1,
     min-width: 72px;
     min-height: 64px;
     padding-inline: 8px;
+  }
+}
+
+/* Compact-height desktops keep navigation, header and composer reachable. */
+@media (min-width: 768px) and (max-height: 700px) {
+  .chat-sidebar {
+    padding: var(--space-3);
+  }
+  .sidebar-brand .brand-logo {
+    width: 34px;
+  }
+  .sidebar-user {
+    margin: var(--space-3) 0;
+    padding: 10px;
+  }
+  .sidebar-nav {
+    gap: var(--space-1);
+  }
+  .sidebar-nav-link {
+    min-height: 38px;
+    padding-block: 8px;
+  }
+  .sidebar-search {
+    margin-top: var(--space-2);
+  }
+  .sidebar-footer {
+    margin-top: var(--space-2);
+    padding-top: var(--space-2);
+  }
+  .chat-card {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+  .chat-header h1 {
+    font-size: 1.35rem;
+  }
+  .messages {
+    padding: var(--space-3);
+  }
+  .message-form {
+    padding: var(--space-2);
+  }
+  .voice-call-overlay {
+    padding: var(--space-2);
+  }
+  .voice-call-panel,
+  .voice-call-panel.video-call-panel {
+    min-height: 0;
+    max-height: calc(100dvh - 16px);
+    overflow-y: auto;
+    padding-block: var(--space-4);
+  }
+  .video-call-stage,
+  .video-call-remote {
+    min-height: min(42dvh, 280px);
+  }
+  .voice-call-panel h2 {
+    margin-top: var(--space-2);
+  }
+  .voice-call-status {
+    margin-bottom: var(--space-3);
   }
 }
