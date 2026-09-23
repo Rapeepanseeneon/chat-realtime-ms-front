@@ -55,7 +55,18 @@ export function AuthForm({ mode }: AuthFormProps) {
         setError(message ?? "Something went wrong. Please try again.");
         return;
       }
-      router.push(isRegister ? "/login?registered=1" : "/");
+      const onboardingCompleted =
+        value &&
+        typeof value === "object" &&
+        "user" in value &&
+        value.user &&
+        typeof value.user === "object" &&
+        "onboardingCompleted" in value.user
+          ? value.user.onboardingCompleted
+          : true;
+      router.replace(
+        isRegister || onboardingCompleted === false ? "/onboarding" : "/chat",
+      );
       router.refresh();
     } catch {
       setError("Could not reach the server. Please try again.");

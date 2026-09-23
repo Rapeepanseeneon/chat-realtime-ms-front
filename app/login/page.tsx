@@ -1,34 +1,19 @@
-import Link from "next/link";
-import { BrandLogo } from "../../components/BrandLogo";
 import { redirect } from "next/navigation";
 import { AuthForm } from "../../components/AuthForm";
+import { AuthPageShell } from "../../components/auth/AuthPageShell";
 import { getCurrentUser } from "../../lib/auth";
+import { getAuthenticatedDestination } from "../../lib/auth-routing";
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ registered?: string }>;
-}) {
-  if (await getCurrentUser()) redirect("/");
-  const { registered } = await searchParams;
+export default async function LoginPage() {
+  const user = await getCurrentUser();
+  if (user) redirect(getAuthenticatedDestination(user));
   return (
-    <main className="site-shell auth-shell">
-      <header className="auth-page-header">
-        <Link className="auth-brand" href="/">
-          <BrandLogo decorative />
-          <span>Pb Messenger</span>
-        </Link>
-      </header>
-      <section className="auth-card" aria-labelledby="login-title">
-        <h1 id="login-title">Welcome back</h1>
-        <p className="card-copy">Message when you're ready.</p>
-        {registered === "1" ? (
-          <p className="form-message form-success">
-            Account created. You can log in now.
-          </p>
-        ) : null}
-        <AuthForm mode="login" />
-      </section>
-    </main>
+    <AuthPageShell
+      eyebrow="Welcome back"
+      title="Continue the conversation."
+      description="Log in with the email connected to your Pb Messenger account."
+    >
+      <AuthForm mode="login" />
+    </AuthPageShell>
   );
 }

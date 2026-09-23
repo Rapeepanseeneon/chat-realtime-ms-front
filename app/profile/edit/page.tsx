@@ -6,6 +6,7 @@ import { getCurrentUser } from "../../../lib/auth";
 export default async function EditProfilePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!user.onboardingCompleted) redirect("/onboarding");
   return (
     <main className="site-shell">
       <section className="auth-card" aria-labelledby="profile-title">

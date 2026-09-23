@@ -6,6 +6,7 @@ export type CurrentUser = {
   email: string;
   avatarUrl: string | null;
   bio: string;
+  onboardingCompleted: boolean;
   createdAt: string;
   updatedAt: string;
 };

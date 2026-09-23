@@ -3,8 +3,12 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pb Messenger",
-  description: "Connect and chat in real time with Pb Messenger.",
+  title: {
+    default: "Pb Messenger — Your message. Your control.",
+    template: "%s | Pb Messenger",
+  },
+  description:
+    "Connect with friends, share freely, and control the moment with Pb Messenger.",
   applicationName: "Pb Messenger",
   icons: {
     icon: [{ url: "/brand/pb-logo.jpg", type: "image/jpeg" }],

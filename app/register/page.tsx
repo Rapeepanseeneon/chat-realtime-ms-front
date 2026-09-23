@@ -1,27 +1,19 @@
-import Link from "next/link";
-import { BrandLogo } from "../../components/BrandLogo";
 import { redirect } from "next/navigation";
 import { AuthForm } from "../../components/AuthForm";
+import { AuthPageShell } from "../../components/auth/AuthPageShell";
 import { getCurrentUser } from "../../lib/auth";
+import { getAuthenticatedDestination } from "../../lib/auth-routing";
 
 export default async function RegisterPage() {
-  if (await getCurrentUser()) redirect("/");
+  const user = await getCurrentUser();
+  if (user) redirect(getAuthenticatedDestination(user));
   return (
-    <main className="site-shell auth-shell">
-      <header className="auth-page-header">
-        <Link className="auth-brand" href="/">
-          <BrandLogo decorative />
-          <span>Pb Messenger</span>
-        </Link>
-      </header>
-      <section className="auth-card" aria-labelledby="register-title">
-        <p className="eyebrow">Join the conversation</p>
-        <h1 id="register-title">Create your account</h1>
-        <p className="card-copy">
-          Sign up to start chatting with Pb Messenger.
-        </p>
-        <AuthForm mode="register" />
-      </section>
-    </main>
+    <AuthPageShell
+      eyebrow="Create your account"
+      title="A better place to talk."
+      description="Choose your Pb identity and you will be ready to meet Messenger in a few quick steps."
+    >
+      <AuthForm mode="register" />
+    </AuthPageShell>
   );
 }

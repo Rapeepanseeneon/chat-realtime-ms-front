@@ -5,6 +5,7 @@ import { ChatClient } from "./ChatClient";
 export default async function ChatPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (!user.onboardingCompleted) redirect("/onboarding");
   return (
     <ChatClient
       currentUser={{
