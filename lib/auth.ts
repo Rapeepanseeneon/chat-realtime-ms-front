@@ -17,10 +17,10 @@ export const apiBaseUrl =
 
 export const getCurrentUser = async (): Promise<CurrentUser | null> => {
   const cookieStore = await cookies();
-  const cookieHeader = cookieStore
-    .getAll()
-    .map(({ name, value }) => `${name}=${value}`)
-    .join("; ");
+  const sessionCookie = cookieStore.get("pb_session");
+  const cookieHeader = sessionCookie
+    ? `${sessionCookie.name}=${sessionCookie.value}`
+    : "";
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/auth/me`, {
