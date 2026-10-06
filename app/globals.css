@@ -2597,6 +2597,12 @@ h1,
   color: white;
   box-shadow: 0 8px 24px var(--shadow);
 }
+.history-page-loading {
+  align-self: center;
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
 .chat-card {
   position: relative;
 }

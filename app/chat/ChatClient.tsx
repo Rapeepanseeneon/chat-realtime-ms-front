@@ -43,6 +43,12 @@ import {
 import { useChatTyping } from "../../lib/use-chat-typing";
 import { useVoiceCall } from "../../lib/use-voice-call";
 import { getApiBaseUrl, getWebSocketUrl } from "../../lib/runtime-config";
+import {
+  anchoredScrollTop,
+  historyTarget,
+  isCurrentHistoryResponse,
+  mergeGroupHistory,
+} from "../../lib/history-pagination";
 
 type ConnectionStatus = "Connecting" | "Connected" | "Disconnected";
 type PendingAttachment =
@@ -125,6 +131,15 @@ export function ChatClient({
   const [status, setStatus] = useState<ConnectionStatus>("Connecting");
   const [friendsLoading, setFriendsLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [olderHistoryLoading, setOlderHistoryLoading] = useState(false);
+  const [privateHistoryPage, setPrivateHistoryPage] = useState<{
+    hasMore: boolean;
+    nextCursor: string | null;
+  }>({ hasMore: false, nextCursor: null });
+  const [groupHistoryPage, setGroupHistoryPage] = useState<{
+    hasMore: boolean;
+    nextBeforeId: string | null;
+  }>({ hasMore: false, nextBeforeId: null });
   const [friendsError, setFriendsError] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -157,6 +172,16 @@ export function ChatClient({
   );
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messageAreaRef = useRef<HTMLDivElement | null>(null);
+  const historyGenerationRef = useRef(0);
+  const olderHistoryAbortRef = useRef<AbortController | null>(null);
+  const olderHistoryRequestRef = useRef<{
+    generation: number;
+    target: string;
+  } | null>(null);
+  const prependScrollAnchorRef = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const nearBottomRef = useRef(true);
@@ -177,6 +202,25 @@ export function ChatClient({
     setUploadProgress(0);
     setAttachmentMenuOpen(false);
   }, []);
+
+  const resetHistoryPagination = useCallback(() => {
+    historyGenerationRef.current += 1;
+    olderHistoryAbortRef.current?.abort();
+    olderHistoryAbortRef.current = null;
+    olderHistoryRequestRef.current = null;
+    prependScrollAnchorRef.current = null;
+    setOlderHistoryLoading(false);
+    setHistoryLoading(false);
+    setPrivateHistoryPage({ hasMore: false, nextCursor: null });
+    setGroupHistoryPage({ hasMore: false, nextBeforeId: null });
+  }, []);
+
+  useEffect(
+    () => () => {
+      olderHistoryAbortRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     const previewUrl =
@@ -694,6 +738,8 @@ export function ChatClient({
     if (!selectedUserId) return;
 
     const controller = new AbortController();
+    const generation = historyGenerationRef.current;
+    const target = historyTarget(selectedUserId, null);
     const loadHistory = async () => {
       if (!apiBaseUrl) {
         setHistoryError("NEXT_PUBLIC_API_URL is not configured.");
@@ -714,7 +760,16 @@ export function ChatClient({
           throw new Error(`History request failed: ${response.status}`);
         }
         const value: unknown = await response.json();
-        if (!isRecord(value) || !Array.isArray(value.messages)) {
+        if (
+          !isRecord(value) ||
+          !Array.isArray(value.messages) ||
+          typeof value.hasMore !== "boolean" ||
+          !(
+            value.nextCursor === null || typeof value.nextCursor === "string"
+          ) ||
+          (value.hasMore && !value.nextCursor) ||
+          (!value.hasMore && value.nextCursor !== null)
+        ) {
           throw new Error("Invalid history response");
         }
         const history = value.messages.map(parsePrivateMessage);
@@ -723,9 +778,21 @@ export function ChatClient({
         }
         if (
           controller.signal.aborted ||
-          selectedUserIdRef.current !== selectedUserId
+          !isCurrentHistoryResponse(
+            generation,
+            historyGenerationRef.current,
+            target,
+            historyTarget(
+              selectedUserIdRef.current,
+              selectedGroupIdRef.current,
+            ),
+          )
         )
           return;
+        setPrivateHistoryPage({
+          hasMore: value.hasMore,
+          nextCursor: value.nextCursor,
+        });
         setMessages((current) =>
           mergeMessages(
             current,
@@ -737,7 +804,11 @@ export function ChatClient({
           return;
         setHistoryError("Message history could not be loaded.");
       } finally {
-        if (!controller.signal.aborted) setHistoryLoading(false);
+        if (
+          !controller.signal.aborted &&
+          generation === historyGenerationRef.current
+        )
+          setHistoryLoading(false);
       }
     };
     void loadHistory();
@@ -749,6 +820,8 @@ export function ChatClient({
   useEffect(() => {
     if (!selectedGroupId) return;
     const controller = new AbortController();
+    const generation = historyGenerationRef.current;
+    const target = historyTarget(null, selectedGroupId);
     const load = async () => {
       setHistoryLoading(true);
       setHistoryError(null);
@@ -758,20 +831,39 @@ export function ChatClient({
           { credentials: "include", signal: controller.signal },
         );
         if (!response.ok) throw Error();
-        const value = (await response.json()) as { messages: GroupMessage[] };
+        const value: unknown = await response.json();
+        if (
+          !isRecord(value) ||
+          !Array.isArray(value.messages) ||
+          typeof value.hasMore !== "boolean" ||
+          !(
+            value.nextBeforeId === null ||
+            (typeof value.nextBeforeId === "string" &&
+              /^[1-9]\d*$/.test(value.nextBeforeId))
+          ) ||
+          (value.hasMore && !value.nextBeforeId) ||
+          (!value.hasMore && value.nextBeforeId !== null)
+        )
+          throw Error("Invalid group history response");
         if (
           !controller.signal.aborted &&
-          selectedGroupIdRef.current === selectedGroupId
+          isCurrentHistoryResponse(
+            generation,
+            historyGenerationRef.current,
+            target,
+            historyTarget(
+              selectedUserIdRef.current,
+              selectedGroupIdRef.current,
+            ),
+          )
         ) {
-          setGroupMessages((current) => {
-            const byId = new Map(
-              value.messages.map((message) => [message.id, message]),
-            );
-            for (const message of current) byId.set(message.id, message);
-            return [...byId.values()].sort((a, b) =>
-              BigInt(a.id) < BigInt(b.id) ? -1 : 1,
-            );
+          setGroupHistoryPage({
+            hasMore: value.hasMore,
+            nextBeforeId: value.nextBeforeId,
           });
+          setGroupMessages((current) =>
+            mergeGroupHistory(current, value.messages as GroupMessage[]),
+          );
           socketRef.current?.send(
             JSON.stringify({ type: "group.read", groupId: selectedGroupId }),
           );
@@ -780,12 +872,131 @@ export function ChatClient({
         if (!(error instanceof Error && error.name === "AbortError"))
           setHistoryError("Group history could not be loaded.");
       } finally {
-        if (!controller.signal.aborted) setHistoryLoading(false);
+        if (
+          !controller.signal.aborted &&
+          generation === historyGenerationRef.current
+        )
+          setHistoryLoading(false);
       }
     };
     void load();
     return () => controller.abort();
   }, [selectedGroupId]);
+
+  const loadOlderHistory = useCallback(async () => {
+    if (!apiBaseUrl || olderHistoryRequestRef.current) return;
+    const userId = selectedUserIdRef.current;
+    const groupId = selectedGroupIdRef.current;
+    const isPrivate = Boolean(userId);
+    if (
+      (isPrivate &&
+        (!privateHistoryPage.hasMore || !privateHistoryPage.nextCursor)) ||
+      (!isPrivate &&
+        (!groupId ||
+          !groupHistoryPage.hasMore ||
+          !groupHistoryPage.nextBeforeId))
+    )
+      return;
+
+    const generation = historyGenerationRef.current;
+    const target = historyTarget(userId, groupId);
+    const request = { generation, target };
+    const controller = new AbortController();
+    olderHistoryRequestRef.current = request;
+    olderHistoryAbortRef.current = controller;
+    setOlderHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const path = isPrivate
+        ? `/api/messages/${encodeURIComponent(userId!)}?before=${encodeURIComponent(privateHistoryPage.nextCursor!)}`
+        : `/api/groups/${encodeURIComponent(groupId!)}/messages?beforeId=${encodeURIComponent(groupHistoryPage.nextBeforeId!)}`;
+      const response = await fetch(`${apiBaseUrl}${path}`, {
+        credentials: "include",
+        signal: controller.signal,
+      });
+      if (response.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (!response.ok)
+        throw new Error(`Older history request failed: ${response.status}`);
+      const value: unknown = await response.json();
+      if (
+        !isRecord(value) ||
+        !Array.isArray(value.messages) ||
+        typeof value.hasMore !== "boolean"
+      )
+        throw new Error("Invalid older history response");
+      if (
+        !isCurrentHistoryResponse(
+          generation,
+          historyGenerationRef.current,
+          target,
+          historyTarget(selectedUserIdRef.current, selectedGroupIdRef.current),
+        )
+      )
+        return;
+
+      if (isPrivate) {
+        if (
+          !(
+            value.nextCursor === null || typeof value.nextCursor === "string"
+          ) ||
+          (value.hasMore && !value.nextCursor) ||
+          (!value.hasMore && value.nextCursor !== null)
+        )
+          throw new Error("Invalid private history response");
+        const history = value.messages.map(parsePrivateMessage);
+        if (history.some((message) => message === null))
+          throw new Error("Invalid private message in history");
+        const area = messageAreaRef.current;
+        prependScrollAnchorRef.current = area
+          ? { scrollHeight: area.scrollHeight, scrollTop: area.scrollTop }
+          : null;
+        setPrivateHistoryPage({
+          hasMore: value.hasMore,
+          nextCursor: value.nextCursor,
+        });
+        setMessages((current) =>
+          mergeMessages(
+            current,
+            applyKnownReceipts(history as PrivateMessage[]),
+          ),
+        );
+      } else {
+        if (
+          !(
+            value.nextBeforeId === null ||
+            (typeof value.nextBeforeId === "string" &&
+              /^[1-9]\d*$/.test(value.nextBeforeId))
+          ) ||
+          (value.hasMore && !value.nextBeforeId) ||
+          (!value.hasMore && value.nextBeforeId !== null)
+        )
+          throw new Error("Invalid group history response");
+        const area = messageAreaRef.current;
+        prependScrollAnchorRef.current = area
+          ? { scrollHeight: area.scrollHeight, scrollTop: area.scrollTop }
+          : null;
+        setGroupHistoryPage({
+          hasMore: value.hasMore,
+          nextBeforeId: value.nextBeforeId,
+        });
+        setGroupMessages((current) =>
+          mergeGroupHistory(current, value.messages as GroupMessage[]),
+        );
+      }
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "AbortError"))
+        setHistoryError("Older messages could not be loaded.");
+    } finally {
+      if (olderHistoryRequestRef.current === request) {
+        olderHistoryRequestRef.current = null;
+        olderHistoryAbortRef.current = null;
+        setOlderHistoryLoading(false);
+      }
+    }
+  }, [applyKnownReceipts, groupHistoryPage, privateHistoryPage, router]);
 
   useEffect(() => {
     markVisibleMessagesRead();
@@ -822,6 +1033,19 @@ export function ChatClient({
 
   useEffect(() => {
     const area = messageAreaRef.current;
+    const prependAnchor = prependScrollAnchorRef.current;
+    if (prependAnchor) {
+      prependScrollAnchorRef.current = null;
+      if (area)
+        requestAnimationFrame(() => {
+          area.scrollTop = anchoredScrollTop(
+            prependAnchor.scrollHeight,
+            prependAnchor.scrollTop,
+            area.scrollHeight,
+          );
+        });
+      return;
+    }
     if (jumpToLatestRef.current) {
       if (messages.length === 0 && groupMessages.length === 0) return;
       jumpToLatestRef.current = false;
@@ -847,6 +1071,7 @@ export function ChatClient({
 
   const selectUser = (user: ChatUser) => {
     if (selectedUserIdRef.current === user.id) return;
+    resetHistoryPagination();
     stopTyping();
     if (
       selectedGroupIdRef.current &&
@@ -888,6 +1113,7 @@ export function ChatClient({
 
   const selectGroup = (group: ChatGroup) => {
     if (selectedGroupIdRef.current === group.id) return;
+    resetHistoryPagination();
     stopTyping();
     if (
       selectedGroupIdRef.current &&
@@ -1334,6 +1560,7 @@ export function ChatClient({
     else sendCurrentMessage();
   };
   const showMobileChatList = () => {
+    resetHistoryPagination();
     stopTyping();
     if (
       selectedGroupIdRef.current &&
@@ -1409,6 +1636,7 @@ export function ChatClient({
             void loadGroups();
             if (group) selectGroup(group);
             if (left && groupInfoTarget?.id === selectedGroupIdRef.current) {
+              resetHistoryPagination();
               selectedGroupIdRef.current = null;
               setSelectedGroupId(null);
               setGroupMessages([]);
@@ -1459,6 +1687,7 @@ export function ChatClient({
             onJumpToLatest={() => scrollToLatest()}
             onScroll={(event) => {
               const element = event.currentTarget;
+              if (element.scrollTop < 96) void loadOlderHistory();
               nearBottomRef.current =
                 element.scrollHeight -
                   element.scrollTop -
@@ -1467,6 +1696,11 @@ export function ChatClient({
               if (nearBottomRef.current) setHasNewMessages(false);
             }}
           >
+            {olderHistoryLoading ? (
+              <div className="history-page-loading" role="status">
+                Loading older messages…
+              </div>
+            ) : null}
             {!selectedUser && !selectedGroup ? (
               <div className="empty-state">
                 <p>Select a chat to start messaging</p>
