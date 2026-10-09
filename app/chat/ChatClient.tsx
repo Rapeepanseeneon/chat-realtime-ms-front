@@ -49,6 +49,11 @@ import {
   isCurrentHistoryResponse,
   mergeGroupHistory,
 } from "../../lib/history-pagination";
+import {
+  collectCursorPages,
+  sortFriendsForChat,
+  sortGroupsForChat,
+} from "../../lib/cursor-pagination";
 
 type ConnectionStatus = "Connecting" | "Connected" | "Disconnected";
 type PendingAttachment =
@@ -160,6 +165,8 @@ export function ChatClient({
     counts: Record<string, number>;
   }>({ synced: false, counts: {} });
   const unreadRevisionRef = useRef(0);
+  const friendsLoadRevisionRef = useRef(0);
+  const groupsLoadRevisionRef = useRef(0);
   const readRequestsRef = useRef(new Map<string, string>());
   const readReceiptsRef = useRef(new Map<string, ReadReceipt>());
   const messagesRef = useRef(messages);
@@ -311,27 +318,46 @@ export function ChatClient({
       }
       setFriendsLoading(true);
       setFriendsError(null);
+      const revision = ++friendsLoadRevisionRef.current;
       try {
-        const response = await fetch(`${apiBaseUrl}/api/friends`, {
-          credentials: "include",
-          signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok)
-          throw new Error(`Friends request failed: ${response.status}`);
-        const value: unknown = await response.json();
-        if (!isRecord(value) || !Array.isArray(value.friends)) {
-          throw new Error("Invalid friends response");
-        }
-        const parsedFriends = value.friends.map(parseChatFriend);
-        if (parsedFriends.some((friend) => friend === null)) {
-          throw new Error("Invalid friend in response");
-        }
-        if (signal?.aborted) return;
-        setFriends(parsedFriends as ChatFriend[]);
+        const loaded = await collectCursorPages<ChatFriend>(
+          async (cursor) => {
+            const query = new URLSearchParams({ limit: "100" });
+            if (cursor) query.set("cursor", cursor);
+            const response = await fetch(
+              `${apiBaseUrl}/api/friends?${query.toString()}`,
+              { credentials: "include", signal },
+            );
+            if (response.status === 401) {
+              router.replace("/login");
+              throw new DOMException("Unauthorized", "AbortError");
+            }
+            if (!response.ok)
+              throw new Error(`Friends request failed: ${response.status}`);
+            const value: unknown = await response.json();
+            if (
+              !isRecord(value) ||
+              !Array.isArray(value.friends) ||
+              typeof value.hasMore !== "boolean" ||
+              !(
+                typeof value.nextCursor === "string" ||
+                value.nextCursor === null
+              )
+            )
+              throw new Error("Invalid friends response");
+            const parsed = value.friends.map(parseChatFriend);
+            if (parsed.some((friend) => friend === null))
+              throw new Error("Invalid friend in response");
+            return {
+              items: parsed as ChatFriend[],
+              hasMore: value.hasMore,
+              nextCursor: value.nextCursor,
+            };
+          },
+          () => !signal?.aborted && revision === friendsLoadRevisionRef.current,
+        );
+        if (!loaded) return;
+        setFriends(sortFriendsForChat(loaded));
         if (socketRef.current?.readyState === WebSocket.OPEN)
           socketRef.current.send(JSON.stringify({ type: "chat.sync" }));
       } catch (requestError) {
@@ -339,7 +365,8 @@ export function ChatClient({
           return;
         setFriendsError("Friends could not be loaded.");
       } finally {
-        if (!signal?.aborted) setFriendsLoading(false);
+        if (!signal?.aborted && revision === friendsLoadRevisionRef.current)
+          setFriendsLoading(false);
       }
     },
     [router],
@@ -347,19 +374,44 @@ export function ChatClient({
   const loadGroups = useCallback(
     async (signal?: AbortSignal) => {
       if (!apiBaseUrl) return;
+      const revision = ++groupsLoadRevisionRef.current;
       try {
-        const response = await fetch(`${apiBaseUrl}/api/groups`, {
-          credentials: "include",
-          signal,
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) throw Error();
-        const value = (await response.json()) as { groups: ChatGroup[] };
-        if (!Array.isArray(value.groups)) throw Error();
-        setGroups(value.groups);
+        const loaded = await collectCursorPages<ChatGroup>(
+          async (cursor) => {
+            const query = new URLSearchParams({ limit: "100" });
+            if (cursor) query.set("cursor", cursor);
+            const response = await fetch(
+              `${apiBaseUrl}/api/groups?${query.toString()}`,
+              { credentials: "include", signal },
+            );
+            if (response.status === 401) {
+              router.replace("/login");
+              throw new DOMException("Unauthorized", "AbortError");
+            }
+            if (!response.ok) throw Error();
+            const value = (await response.json()) as {
+              groups?: ChatGroup[];
+              hasMore?: unknown;
+              nextCursor?: unknown;
+            };
+            if (
+              !Array.isArray(value.groups) ||
+              typeof value.hasMore !== "boolean" ||
+              !(
+                typeof value.nextCursor === "string" ||
+                value.nextCursor === null
+              )
+            )
+              throw Error();
+            return {
+              items: value.groups,
+              hasMore: value.hasMore,
+              nextCursor: value.nextCursor,
+            };
+          },
+          () => !signal?.aborted && revision === groupsLoadRevisionRef.current,
+        );
+        if (loaded) setGroups(sortGroupsForChat(loaded));
       } catch (error) {
         if (!(error instanceof Error && error.name === "AbortError"))
           setConnectionError("Groups could not be loaded.");

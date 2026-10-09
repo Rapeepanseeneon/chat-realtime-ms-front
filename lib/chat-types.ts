@@ -45,7 +45,10 @@ export type GroupMember = ChatUser & {
   role: "owner" | "member";
   joinedAt: string;
 };
-export type GroupInfo = ChatGroup & { members: GroupMember[] };
+export type GroupInfo = ChatGroup & {
+  members: GroupMember[];
+  memberPage: { hasMore: boolean; nextCursor: string | null };
+};
 export type MessageAttachment = {
   id: string;
   kind: "image" | "file" | "location";

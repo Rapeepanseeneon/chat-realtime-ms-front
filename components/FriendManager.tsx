@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type { FriendRequest, FriendSearchResult } from "../lib/chat-types";
+import { mergeUniqueById } from "../lib/cursor-pagination";
 import { getApiBaseUrl } from "../lib/runtime-config";
 
 type FriendManagerProps = {
@@ -85,55 +86,82 @@ export function FriendManager({
 }: FriendManagerProps) {
   const router = useRouter();
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const requestLoadRevisionRef = useRef(0);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FriendSearchResult[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [searching, setSearching] = useState(false);
   const [requestsLoading, setRequestsLoading] = useState(false);
+  const [requestPage, setRequestPage] = useState<{
+    hasMore: boolean;
+    nextCursor: string | null;
+  }>({ hasMore: false, nextCursor: null });
   const [addingUserId, setAddingUserId] = useState<string | null>(null);
   const [updatingRequestId, setUpdatingRequestId] = useState<string | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
 
-  const loadRequests = useCallback(async () => {
-    if (!apiBaseUrl) {
-      setError("NEXT_PUBLIC_API_URL is not configured.");
-      return;
-    }
-    setRequestsLoading(true);
-    try {
-      const response = await fetch(`${apiBaseUrl}/api/friend-requests`, {
-        credentials: "include",
-      });
-      if (response.status === 401) {
-        router.replace("/login");
+  const loadRequests = useCallback(
+    async (cursor: string | null = null) => {
+      if (!apiBaseUrl) {
+        setError("NEXT_PUBLIC_API_URL is not configured.");
         return;
       }
-      if (!response.ok) {
-        throw new Error(
-          await readError(response, "Friend requests could not be loaded."),
+      const revision = ++requestLoadRevisionRef.current;
+      setRequestsLoading(true);
+      try {
+        const query = new URLSearchParams({ limit: "50" });
+        if (cursor) query.set("cursor", cursor);
+        const response = await fetch(
+          `${apiBaseUrl}/api/friend-requests?${query.toString()}`,
+          { credentials: "include" },
         );
+        if (response.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(
+            await readError(response, "Friend requests could not be loaded."),
+          );
+        }
+        const value: unknown = await response.json();
+        if (
+          !isRecord(value) ||
+          !Array.isArray(value.requests) ||
+          typeof value.hasMore !== "boolean" ||
+          !(typeof value.nextCursor === "string" || value.nextCursor === null)
+        ) {
+          throw new Error("Invalid friend requests response.");
+        }
+        const parsed = value.requests.map(parseFriendRequest);
+        if (parsed.some((request) => request === null)) {
+          throw new Error("Invalid friend request in response.");
+        }
+        if (revision !== requestLoadRevisionRef.current) return;
+        setRequests((current) =>
+          cursor
+            ? mergeUniqueById(current, parsed as FriendRequest[])
+            : (parsed as FriendRequest[]),
+        );
+        setRequestPage({
+          hasMore: value.hasMore,
+          nextCursor: value.nextCursor,
+        });
+      } catch (requestError) {
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Friend requests could not be loaded.",
+        );
+      } finally {
+        if (revision === requestLoadRevisionRef.current)
+          setRequestsLoading(false);
       }
-      const value: unknown = await response.json();
-      if (!isRecord(value) || !Array.isArray(value.requests)) {
-        throw new Error("Invalid friend requests response.");
-      }
-      const parsed = value.requests.map(parseFriendRequest);
-      if (parsed.some((request) => request === null)) {
-        throw new Error("Invalid friend request in response.");
-      }
-      setRequests(parsed as FriendRequest[]);
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Friend requests could not be loaded.",
-      );
-    } finally {
-      setRequestsLoading(false);
-    }
-  }, [router]);
+    },
+    [router],
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -226,6 +254,8 @@ export function FriendManager({
 
   const respond = async (requestId: string, action: "accept" | "reject") => {
     if (!apiBaseUrl || updatingRequestId) return;
+    requestLoadRevisionRef.current += 1;
+    setRequestsLoading(false);
     const senderId = requests.find((request) => request.id === requestId)
       ?.sender.id;
     setUpdatingRequestId(requestId);
@@ -358,12 +388,16 @@ export function FriendManager({
 
         <div className="friend-requests-heading">
           <h3>Friend Requests</h3>
-          <button type="button" onClick={() => void loadRequests()}>
+          <button
+            type="button"
+            disabled={requestsLoading}
+            onClick={() => void loadRequests()}
+          >
             Refresh
           </button>
         </div>
         <div className="friend-requests-list">
-          {requestsLoading ? (
+          {requestsLoading && requests.length === 0 ? (
             <p className="friend-empty">Loading requests…</p>
           ) : requests.length === 0 ? (
             <p className="friend-empty">No pending friend requests.</p>
@@ -394,6 +428,16 @@ export function FriendManager({
               </div>
             ))
           )}
+          {requestPage.hasMore && requestPage.nextCursor ? (
+            <button
+              className="button button-ghost"
+              type="button"
+              disabled={requestsLoading}
+              onClick={() => void loadRequests(requestPage.nextCursor)}
+            >
+              {requestsLoading ? "Loading…" : "Load older requests"}
+            </button>
+          ) : null}
         </div>
 
         {error ? (

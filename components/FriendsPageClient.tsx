@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type {
   FriendPageFriend,
   FriendSearchUser,
@@ -11,6 +17,7 @@ import type {
   SentRequest,
 } from "../lib/friends-types";
 import { getApiBaseUrl } from "../lib/runtime-config";
+import { collectCursorPages } from "../lib/cursor-pagination";
 import { UserAvatar } from "./UserAvatar";
 
 type Overview = {
@@ -36,6 +43,7 @@ async function responseJson<T>(response: Response): Promise<T> {
 
 export function FriendsPageClient() {
   const router = useRouter();
+  const loadRevisionRef = useRef(0);
   const [overview, setOverview] = useState(emptyOverview);
   const [searchResults, setSearchResults] = useState<FriendSearchUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,51 +55,85 @@ export function FriendsPageClient() {
     const api = getApiBaseUrl();
     if (!api) return;
     setLoading(true);
+    const revision = ++loadRevisionRef.current;
     try {
       const options = { credentials: "include" as const };
-      const [
-        friendsResponse,
-        receivedResponse,
-        sentResponse,
-        suggestionsResponse,
-      ] = await Promise.all([
-        fetch(`${api}/api/friends`, options),
-        fetch(`${api}/api/friend-requests`, options),
-        fetch(`${api}/api/friend-requests/sent`, options),
+      const loadAll = async <T extends { id: string }>(
+        path: string,
+        key: "friends" | "requests",
+      ) =>
+        collectCursorPages<T>(
+          async (cursor) => {
+            const query = new URLSearchParams({ limit: "100" });
+            if (cursor) query.set("cursor", cursor);
+            const response = await fetch(
+              `${api}${path}?${query.toString()}`,
+              options,
+            );
+            if (response.status === 401) {
+              router.replace("/login");
+              throw new DOMException("Unauthorized", "AbortError");
+            }
+            const value = await responseJson<{
+              friends?: T[];
+              requests?: T[];
+              hasMore: boolean;
+              nextCursor: string | null;
+            }>(response);
+            const items = value[key];
+            if (
+              !Array.isArray(items) ||
+              typeof value.hasMore !== "boolean" ||
+              !(
+                typeof value.nextCursor === "string" ||
+                value.nextCursor === null
+              )
+            )
+              throw new Error("Invalid paginated list response.");
+            return {
+              items,
+              hasMore: value.hasMore,
+              nextCursor: value.nextCursor,
+            };
+          },
+          () => revision === loadRevisionRef.current,
+        );
+      const [friends, received, sent, suggestionsResponse] = await Promise.all([
+        loadAll<FriendPageFriend>("/api/friends", "friends"),
+        loadAll<ReceivedRequest>("/api/friend-requests", "requests"),
+        loadAll<SentRequest>("/api/friend-requests/sent", "requests"),
         fetch(`${api}/api/friends/suggestions`, options),
       ]);
-      if (
-        [
-          friendsResponse,
-          receivedResponse,
-          sentResponse,
-          suggestionsResponse,
-        ].some((item) => item.status === 401)
-      ) {
+      if (suggestionsResponse.status === 401) {
         router.replace("/login");
         return;
       }
-      const [friends, received, sent, suggestions] = await Promise.all([
-        responseJson<{ friends: FriendPageFriend[] }>(friendsResponse),
-        responseJson<{ requests: ReceivedRequest[] }>(receivedResponse),
-        responseJson<{ requests: SentRequest[] }>(sentResponse),
-        responseJson<{ users: FriendSuggestion[] }>(suggestionsResponse),
-      ]);
+      const suggestions = await responseJson<{ users: FriendSuggestion[] }>(
+        suggestionsResponse,
+      );
+      if (
+        revision !== loadRevisionRef.current ||
+        !friends ||
+        !received ||
+        !sent
+      )
+        return;
       setOverview({
-        friends: friends.friends,
-        received: received.requests,
-        sent: sent.requests,
+        friends,
+        received,
+        sent,
         suggestions: suggestions.users,
       });
       setError(null);
     } catch (loadError) {
+      if (loadError instanceof Error && loadError.name === "AbortError") return;
       setError(
         loadError instanceof Error
           ? loadError.message
           : "Friends could not be loaded.",
       );
     } finally {
-      setLoading(false);
+      if (revision === loadRevisionRef.current) setLoading(false);
     }
   }, [router]);
 

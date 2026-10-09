@@ -1,6 +1,13 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import type { ChatFriend, ChatGroup, GroupInfo } from "../lib/chat-types";
+import { mergeUniqueById } from "../lib/cursor-pagination";
 import { getApiBaseUrl } from "../lib/runtime-config";
 import { UserAvatar } from "./UserAvatar";
 const api = getApiBaseUrl();
@@ -22,7 +29,42 @@ export function GroupManager({
     [selected, setSelected] = useState<string[]>([]),
     [info, setInfo] = useState<GroupInfo | null>(null),
     [error, setError] = useState<string | null>(null),
-    [pending, setPending] = useState(false);
+    [pending, setPending] = useState(false),
+    [membersLoading, setMembersLoading] = useState(false);
+  const memberLoadRevisionRef = useRef(0);
+  const loadInfo = useCallback(
+    async (target: ChatGroup, cursor: string | null, signal?: AbortSignal) => {
+      const revision = ++memberLoadRevisionRef.current;
+      setMembersLoading(true);
+      try {
+        const query = new URLSearchParams({ memberLimit: "50" });
+        if (cursor) query.set("memberCursor", cursor);
+        const r = await fetch(
+          `${api}/api/groups/${target.id}?${query.toString()}`,
+          { credentials: "include", signal },
+        );
+        if (!r.ok) throw Error();
+        const loaded = ((await r.json()) as { group: GroupInfo }).group;
+        if (revision !== memberLoadRevisionRef.current || signal?.aborted)
+          return;
+        setInfo((current) =>
+          cursor && current
+            ? {
+                ...loaded,
+                members: mergeUniqueById(current.members, loaded.members),
+              }
+            : loaded,
+        );
+      } catch (e) {
+        if (!(e instanceof Error && e.name === "AbortError"))
+          setError("Group info could not be loaded.");
+      } finally {
+        if (revision === memberLoadRevisionRef.current && !signal?.aborted)
+          setMembersLoading(false);
+      }
+    },
+    [],
+  );
   useEffect(() => {
     if (!isOpen) return;
     setError(null);
@@ -33,22 +75,9 @@ export function GroupManager({
       return;
     }
     const controller = new AbortController();
-    const load = async () => {
-      try {
-        const r = await fetch(`${api}/api/groups/${group.id}`, {
-          credentials: "include",
-          signal: controller.signal,
-        });
-        if (!r.ok) throw Error();
-        setInfo(((await r.json()) as { group: GroupInfo }).group);
-      } catch (e) {
-        if (!(e instanceof Error && e.name === "AbortError"))
-          setError("Group info could not be loaded.");
-      }
-    };
-    void load();
+    void loadInfo(group, null, controller.signal);
     return () => controller.abort();
-  }, [isOpen, group]);
+  }, [isOpen, group, loadInfo]);
   if (!isOpen) return null;
   const request = async (body: unknown) => {
     setPending(true);
@@ -180,7 +209,21 @@ export function GroupManager({
                   ) : null}
                 </div>
               ))}
-              {info.role === "owner" && available.length ? (
+              {info.memberPage.hasMore && info.memberPage.nextCursor ? (
+                <button
+                  type="button"
+                  className="button button-ghost"
+                  disabled={membersLoading}
+                  onClick={() =>
+                    void loadInfo(group!, info.memberPage.nextCursor)
+                  }
+                >
+                  {membersLoading ? "Loading…" : "Load more members"}
+                </button>
+              ) : null}
+              {info.role === "owner" &&
+              !info.memberPage.hasMore &&
+              available.length ? (
                 <label className="field">
                   <span>Add accepted friend</span>
                   <select
