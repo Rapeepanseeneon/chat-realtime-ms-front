@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { getServerApiBaseUrl } from "./server-config";
 
 export type CurrentUser = {
   id: string;
@@ -11,21 +12,18 @@ export type CurrentUser = {
   updatedAt: string;
 };
 
-export const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "") ??
-  "http://localhost:3001";
+export const apiBaseUrl = getServerApiBaseUrl();
 
 export const getCurrentUser = async (): Promise<CurrentUser | null> => {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("pb_session");
-  const cookieHeader = sessionCookie
-    ? `${sessionCookie.name}=${sessionCookie.value}`
-    : "";
+  if (!sessionCookie) return null;
+  const cookieHeader = `${sessionCookie.name}=${sessionCookie.value}`;
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/auth/me`, {
       cache: "no-store",
-      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+      headers: { cookie: cookieHeader },
     });
     if (!response.ok) return null;
     const value: unknown = await response.json();

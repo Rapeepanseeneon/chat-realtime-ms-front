@@ -5,7 +5,7 @@
   "packageManager": "bun@1.4.2",
   "scripts": {
     "dev": "next dev",
-    "dev:https": "node --use-system-ca ./node_modules/next/dist/bin/next dev -H 0.0.0.0 --experimental-https --experimental-https-key certs/localhost+2-key.pem --experimental-https-cert certs/localhost+2.pem",
+    "dev:https": "node --use-system-ca ./node_modules/next/dist/bin/next dev -H 0.0.0.0 --experimental-https --experimental-https-key certs/pb-lan-key.pem --experimental-https-cert certs/pb-lan.pem",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
